@@ -8,7 +8,9 @@ function Builder() {
   this.moduleNames = {};
   this.moduleList = [];
   this.strExports = "";  
+  this.strTest = "";
   this.str = "";
+  this.test = "";
 }
 
 Builder.prototype.addModule = function(name, path) {
@@ -54,10 +56,23 @@ Builder.prototype.build = function() {
       this.writeSubmodules( this.moduleList[e++ ] );
    }
 
-   this. write_string(  ']);\n' + this.strExports + ';}).call (function(){try{return module.exports;}catch(e){return this;}}.call(this))' );
+   var str = this.str;
+   this.writeFinish(this.strExports);
+   var main = this.str;
+  
+   this.str = str;
+   this.writeFinish(this.strExports+'\n;(function(){'+this.strTest+'})();');
+   var test = this.str;
+
+   this.test = test;
+   this.str = main;
 };  
 
-Builder.prototype.write = function(output) {
+Builder.prototype.writeFinish = function(finishCode) {
+   this. write_string(  ']);\n' + finishCode + ';}).call (function(){try{return module.exports;}catch(e){return this;}}.call(this))' );
+};
+  
+Builder.prototype.write = function(output, str) {
    console.log("WRITING MODULES");
    fs .writeSync(output, this.str, 0, this.str.length);
    fs .closeSync(output);
@@ -126,6 +141,9 @@ while ( e < files.length ) {
     else if ( name === 'mexport' )
       builder.setExports(fs. readFileSync(src + '/' + files[e]) );
 
+    else if (name === 'test')
+      builder.strTest = fs.readFileSync(src+'/'+files[e]);
+
     else {
         var l = name.indexOf('@');
         if ( l >= 0 ) 
@@ -144,6 +162,14 @@ var exports = {};
 console.log("BUILD STARTED");
 builder.build();
 
-builder.write(fs .openSync(dist+'.js', 'w+'));
-console.log("BUILDING COMPLETE.");
+builder.write(fs.openSync(dist+'.js', 'w+'), builder.str);
+builder.write(fs.openSync(dist+'_test.js', 'w+'), builder.test);
 
+console.log("BUILD STAGE COMPLETE.");
+
+console.log("TESTING");
+
+try { eval(builder.test); }
+catch (e) { console.log("TESTING FAILED", e.message); throw e; }
+
+console.log("TEST STAGE COMPLETE.");

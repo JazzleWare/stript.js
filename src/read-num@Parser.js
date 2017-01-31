@@ -13,7 +13,7 @@ this.readNum = function() {
   this.traw = this.c0_to_c();
 };
 
-this.readNumStaringWith0 = function() {
+this.readNumStartingWith0 = function() {
   var c = this.c, len = this.src.length;
   c++;
   this.setoff(c);

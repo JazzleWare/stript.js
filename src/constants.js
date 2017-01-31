@@ -112,5 +112,6 @@ var base = 0;
 var TOKEN_NONE = base++;
 var TOKEN_STR = base++;
 var TOKEN_NUM = base++;
+var TOKEN_ID = base++;
 var TOKEN_EOF = -1;
 

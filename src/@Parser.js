@@ -1,6 +1,6 @@
 function Parser(src, mode) {
   this.c0 = this.c = 0;
-  this.li0 = this.li0 = 1;
+  this.li0 = this.li = 1;
   this.col0 = this.col = 0;
 
   this.lastUsedOffset = 0;
