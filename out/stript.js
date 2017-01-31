@@ -175,6 +175,12 @@ function char2int(ch) { return ch.charCodeAt(0); }
      }).call([
 null,
 [Parser.prototype, [function(){
+this.ch_or_eof = function(offset) {
+  if (offset >= this.src.length)
+    return CH_EOF;
+  return this.ch(offset);
+};
+
 this.ch = function(offset) {
   return this.src.charCodeAt(offset);
 };
@@ -213,6 +219,29 @@ this.newline = function(offset) {
   this.li++;
   this.col = 0;
   this.lastUsedOffset = offset;
+};
+
+},
+function(){
+this.readEsc = function() {
+  var c = this.c, len = this.src.length;
+  c++; // the \
+
+  switch (this.ch_or_eof(c)) {
+  case CH_v: case CH_b: case CH_f: case CH_r: case CH_t: case CH_n:
+  case CH_BACK_SLASH: case CH_SINGLE_QUOTE: case CH_MULTI_QUOTE:
+    c++;
+    this.setoff(c);
+    return;
+
+  case CH_u:
+    c++;
+    this.setoff(c);
+    return this.readEscU();
+  }
+
+  this.setoff(c);
+  this.err('unknown.escape');
 };
 
 },
@@ -272,13 +301,16 @@ this.readString = function() {
       break;
     case strDelim:
       break LOOP;
+    case CH_NL: case CH_CR:
+      this.setoff(c);
+      return this.err('str.newline');
     default:
       c++;
     }
   }
 
   if (c >= len)
-    this.err('unfinished.str');
+    this.err('str.unfinished');
 
   c++; // the closing " or '
 

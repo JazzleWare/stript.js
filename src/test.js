@@ -24,7 +24,9 @@ function range(min, max) {
 var ID_HEAD = range(CH_a, CH_z) + range(CH_A, CH_Z) + '$' + '_';
 var NUM = range(CH_0, CH_9);
 var ID_CONTINUE = ID_HEAD + NUM;
-var PUNCT = "!@#$%^&*()_+-=~`{}[]|:;<>,.?/"; // no \, ', or " for now
+var PUNCT = "!@#$%^&*()_+-=~`{}[]|:;<>,.?/\\"; // no \, ', or " for now
+var ESC = ['v', 'b', 'n', 'r', 't', 'f', '"', '\'', '\\'];
+
 var STR = ID_CONTINUE + PUNCT;
 
 function randLen(min) {
@@ -36,6 +38,10 @@ function randLen(min) {
 
 function randCh(charset) {
   return charset.charAt(rand(0, charset.length-1));
+}
+
+function randElem(list) {
+  return list[rand(0, list.length-1)];
 }
 
 function randSpace_sn(sp, nl) {
@@ -66,6 +72,10 @@ function randSpace_sn(sp, nl) {
   return str;
 };
 
+function randEsc() {
+  return '\\'+randElem(ESC);
+}
+
 _randToken[TOKEN_ID] = function() {
   var len = randLen(), tok = "";
   tok += randCh(ID_HEAD);
@@ -87,8 +97,11 @@ _randToken[TOKEN_STR] = function() {
   var len = randLen(), tok = "";
   var strDelim = rand(1,2) === 1 ? "'" : '"';
   tok += strDelim;
-  while (len-->0)
-    tok += randCh(STR);
+  while (len-->0) {
+    var ch = randCh(STR);
+    if (ch === '\\') ch = randEsc();
+    tok += ch;
+  }
   tok += strDelim;
   return tok;
 };
@@ -145,19 +158,24 @@ function testTokens(num) {
       testParser = new Parser(tokens2src(tokens)),
       e = 0;
 
-  do {
-    testParser.skipWhitespace();
-    testParser.next();
+  try {
+    do {
+      testParser.skipWhitespace();
+      testParser.next();
 
-    COMPARE_ATTRIBUTES.forEach(function(item) {
-      if (tokens[e].ttype === TOKEN_EOF && item === 'traw')
-        return;
+      COMPARE_ATTRIBUTES.forEach(function(item) {
+        if (tokens[e].ttype === TOKEN_EOF && item === 'traw')
+          return;
 
-      try { assertEq_ea(item, testParser[item], tokens[e][item]); }
-      catch (err) { console.error(tokens, testParser, e, tokens[e]); throw err; }
-    });
-    ++e;
-  } while (e < tokens.length);
+        assertEq_ea(item, testParser[item], tokens[e][item]);
+      });
+      ++e;
+    } while (e < tokens.length);
+  }
+  catch (err) {
+    console.error(tokens, testParser, e, tokens[e]);
+    throw err;
+  }
 }
 
 testTokens(40);

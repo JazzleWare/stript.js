@@ -13,13 +13,16 @@ this.readString = function() {
       break;
     case strDelim:
       break LOOP;
+    case CH_NL: case CH_CR:
+      this.setoff(c);
+      return this.err('str.newline');
     default:
       c++;
     }
   }
 
   if (c >= len)
-    this.err('unfinished.str');
+    this.err('str.unfinished');
 
   c++; // the closing " or '
 

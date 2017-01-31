@@ -1,3 +1,9 @@
+this.ch_or_eof = function(offset) {
+  if (offset >= this.src.length)
+    return CH_EOF;
+  return this.ch(offset);
+};
+
 this.ch = function(offset) {
   return this.src.charCodeAt(offset);
 };
