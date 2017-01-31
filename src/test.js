@@ -27,8 +27,11 @@ var ID_CONTINUE = ID_HEAD + NUM;
 var PUNCT = "!@#$%^&*()_+-=~`{}[]|:;<>,.?/"; // no \, ', or " for now
 var STR = ID_CONTINUE + PUNCT;
 
-function randLen() {
-  return rand(0, 40);
+function randLen(min) {
+  if (arguments.length === 0)
+    min = 0;
+
+  return rand(min, 40);
 }
 
 function randCh(charset) {
@@ -37,6 +40,10 @@ function randCh(charset) {
 
 function randSpace_sn(sp, nl) {
   var SPACE = [' ', '\t'], NL = ['\r', '\r\n', '\n'], len = randLen();
+  if (len === 0) {
+    sp && len++;
+    nl && len++;
+  }
 
   var sp_len = 0;
   if (sp) sp_len = rand(1, len>>1);
@@ -146,7 +153,8 @@ function testTokens(num) {
       if (tokens[e].ttype === TOKEN_EOF && item === 'traw')
         return;
 
-      assertEq_ea(item, testParser[item], tokens[e][item]);
+      try { assertEq_ea(item, testParser[item], tokens[e][item]); }
+      catch (err) { console.error(tokens, testParser, e, tokens[e]); throw err; }
     });
     ++e;
   } while (e < tokens.length);

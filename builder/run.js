@@ -74,7 +74,7 @@ Builder.prototype.writeFinish = function(finishCode) {
   
 Builder.prototype.write = function(output, str) {
    console.log("WRITING MODULES");
-   fs .writeSync(output, this.str, 0, this.str.length);
+   fs .writeSync(output, str, 0, str.length);
    fs .closeSync(output);
 
    console.log("FINISHED ALL.");

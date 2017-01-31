@@ -149,7 +149,8 @@ function isNum(c) {
 
 function isIDHead(c) {
   return (c >= CH_a && c <= CH_z) ||
-         (c >= CH_A && c <= CH_z);
+         (c >= CH_A && c <= CH_z) ||
+         (c === CH_UNDERLINE || c === CH_$);
 }
 
 function isIDBody(c) {
@@ -209,6 +210,7 @@ this.setoff = function(offset) {
 };
 
 this.newline = function(offset) {
+  this.li++;
   this.col = 0;
   this.lastUsedOffset = offset;
 };
@@ -222,7 +224,7 @@ this.readIdentifier = function() {
   while (c < len && isIDBody(this.ch(c)))
     c++;
 
-  this.c = c;
+  this.setoff(c);
   this.ttype = TOKEN_ID;
   this.traw = this.c0_to_c();
 };    

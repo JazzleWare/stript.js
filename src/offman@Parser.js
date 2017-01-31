@@ -4,6 +4,7 @@ this.setoff = function(offset) {
 };
 
 this.newline = function(offset) {
+  this.li++;
   this.col = 0;
   this.lastUsedOffset = offset;
 };

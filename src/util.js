@@ -4,7 +4,8 @@ function isNum(c) {
 
 function isIDHead(c) {
   return (c >= CH_a && c <= CH_z) ||
-         (c >= CH_A && c <= CH_z);
+         (c >= CH_A && c <= CH_z) ||
+         (c === CH_UNDERLINE || c === CH_$);
 }
 
 function isIDBody(c) {

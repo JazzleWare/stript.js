@@ -5,7 +5,7 @@ this.readIdentifier = function() {
   while (c < len && isIDBody(this.ch(c)))
     c++;
 
-  this.c = c;
+  this.setoff(c);
   this.ttype = TOKEN_ID;
   this.traw = this.c0_to_c();
 };    
