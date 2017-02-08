@@ -75,7 +75,8 @@ var CH_1 = char2int('1'),
 
 var CH_CR = CH_CARRIAGE_RETURN,
     CH_SP = CH_WHITESPACE,
-    CH_NL = CH_LINE_FEED;
+    CH_NL = CH_LINE_FEED,
+    CH_EOF = -1;
 
 var INTBITLEN = (function() { var i = 0;
   while ( 0 < (1 << (i++)))
@@ -107,11 +108,38 @@ var VDT_NONE = 0;
 var VDT_DELETE = 4;
 var VDT_AWAIT = 8;
 
-var base = 0;
+var TOKEN_NONE = 0;
+var TOKEN_EOF = 1 << 8;
+var TOKEN_STR = TOKEN_EOF << 1;
+var TOKEN_NUM = TOKEN_STR << 1;
+var TOKEN_ID = TOKEN_NUM << 1;
+var TOKEN_ASSIG = TOKEN_ID << 1;
+var TOKEN_UNARY = TOKEN_ASSIG << 1;
+var TOKEN_BINARY = TOKEN_UNARY << 1;
+var TOKEN_AA_MM = TOKEN_BINARY << 1;
+var TOKEN_OP_ASSIG = TOKEN_AA_MM << 1;
+var TOKEN_OP = TOKEN_ASSIG|TOKEN_UNARY|TOKEN_BINARY|TOKEN_AA_MM|TOKEN_OP_ASSIG;
+var TOKEN_LIT = TOKEN_NUM|TOKEN_STR;
+var TOKEN_OBJ_KEY = TOKEN_ID|TOKEN_LIT;
 
-var TOKEN_NONE = base++;
-var TOKEN_STR = base++;
-var TOKEN_NUM = base++;
-var TOKEN_ID = base++;
-var TOKEN_EOF = -1;
+function nextl(nPrec) { return (nPrec&1) ? nPrec + 1 : nPrec + 2; }
+function nextr(nPrec) { return (nPrec&1) ? nPrec + 2 : nPrec + 1; }
+
+var PREC_NONE = 0; // [<start>]
+var PREC_COMMA = nextl(PREC_NONE); // ,
+var PREC_ASSIG = nextr(PREC_COMMA); // =, [<op>]=
+var PREC_COND = nextl(PREC_ASSIG); // ?:
+var PREC_LOG_OR = nextl(PREC_COND); // ||
+var PREC_LOG_AND = nextl(PREC_LOG_OR); // &&
+var PREC_BIT_OR = nextl(PREC_LOG_AND); // |
+var PREC_BIT_XOR = nextl(PREC_BIT_OR); // ^
+var PREC_BIT_AND = nextl(PREC_BIT_XOR); // &
+var PREC_EQ = nextl(PREC_BIT_AND); // !=, ===, ==, !==
+var PREC_COMP = nextl(PREC_EQ); // >, <=, <, >=, instanceof, in
+var PREC_SH = nextl(PREC_COMP); // >>>, <<, >>
+var PREC_ADD = nextl(PREC_SH); // +, -
+var PREC_MUL = nextl(PREC_ADD); // *, /
+var PREC_EX = nextl(PREC_MUL); // **
+var PREC_UNARY = nextr(PREC_EX); // delete, void, -, +, typeof; not really a right-associative thing
+var PREC_UP = nextr(PREC_UNARY); // ++, --; not really a right-associative thing
 

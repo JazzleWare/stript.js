@@ -19,6 +19,8 @@ function Parser(src, mode) {
 
   this.sp = false;
   this.nl = false;
+
+  this.currentFwRefTarget = null;
 }
 ;
 function Transformer() {
@@ -102,7 +104,8 @@ var CH_1 = char2int('1'),
 
 var CH_CR = CH_CARRIAGE_RETURN,
     CH_SP = CH_WHITESPACE,
-    CH_NL = CH_LINE_FEED;
+    CH_NL = CH_LINE_FEED,
+    CH_EOF = -1;
 
 var INTBITLEN = (function() { var i = 0;
   while ( 0 < (1 << (i++)))
@@ -134,13 +137,40 @@ var VDT_NONE = 0;
 var VDT_DELETE = 4;
 var VDT_AWAIT = 8;
 
-var base = 0;
+var TOKEN_NONE = 0;
+var TOKEN_EOF = 1 << 8;
+var TOKEN_STR = TOKEN_EOF << 1;
+var TOKEN_NUM = TOKEN_STR << 1;
+var TOKEN_ID = TOKEN_NUM << 1;
+var TOKEN_ASSIG = TOKEN_ID << 1;
+var TOKEN_UNARY = TOKEN_ASSIG << 1;
+var TOKEN_BINARY = TOKEN_UNARY << 1;
+var TOKEN_AA_MM = TOKEN_BINARY << 1;
+var TOKEN_OP_ASSIG = TOKEN_AA_MM << 1;
+var TOKEN_OP = TOKEN_ASSIG|TOKEN_UNARY|TOKEN_BINARY|TOKEN_AA_MM|TOKEN_OP_ASSIG;
+var TOKEN_LIT = TOKEN_NUM|TOKEN_STR;
+var TOKEN_OBJ_KEY = TOKEN_ID|TOKEN_LIT;
 
-var TOKEN_NONE = base++;
-var TOKEN_STR = base++;
-var TOKEN_NUM = base++;
-var TOKEN_ID = base++;
-var TOKEN_EOF = -1;
+function nextl(nPrec) { return (nPrec&1) ? nPrec + 1 : nPrec + 2; }
+function nextr(nPrec) { return (nPrec&1) ? nPrec + 2 : nPrec + 1; }
+
+var PREC_NONE = 0; // [<start>]
+var PREC_COMMA = nextl(PREC_NONE); // ,
+var PREC_ASSIG = nextr(PREC_COMMA); // =, [<op>]=
+var PREC_COND = nextl(PREC_ASSIG); // ?:
+var PREC_LOG_OR = nextl(PREC_COND); // ||
+var PREC_LOG_AND = nextl(PREC_LOG_OR); // &&
+var PREC_BIT_OR = nextl(PREC_LOG_AND); // |
+var PREC_BIT_XOR = nextl(PREC_BIT_OR); // ^
+var PREC_BIT_AND = nextl(PREC_BIT_XOR); // &
+var PREC_EQ = nextl(PREC_BIT_AND); // !=, ===, ==, !==
+var PREC_COMP = nextl(PREC_EQ); // >, <=, <, >=, instanceof, in
+var PREC_SH = nextl(PREC_COMP); // >>>, <<, >>
+var PREC_ADD = nextl(PREC_SH); // +, -
+var PREC_MUL = nextl(PREC_ADD); // *, /
+var PREC_EX = nextl(PREC_MUL); // **
+var PREC_UNARY = nextr(PREC_EX); // delete, void, -, +, typeof; not really a right-associative thing
+var PREC_UP = nextr(PREC_UNARY); // ++, --; not really a right-associative thing
 
 ;
 function isNum(c) {
@@ -175,6 +205,66 @@ function char2int(ch) { return ch.charCodeAt(0); }
      }).call([
 null,
 [Parser.prototype, [function(){
+this.readLineComment = function() {
+  var c = this.c, len = this.src.length;
+  c += 2; // i.e., //
+  while (c < len) {
+    switch (this.ch(c)) {
+    case CH_CR:
+      if (c+1 < len && this.ch(c+1) === CH_NL)
+        c++;
+    case CH_NL:
+      c++;
+      this.newline(c);
+      this.c = c;
+      return true;
+    default:
+      c++;
+      break;
+    }
+  }
+
+  this.setoff(c);
+  return false;
+};
+
+this.readMultiComment = function() {
+  var nl = false, c = this.c, len = this.src.length;
+  c += 2; // i.e., /*
+  while (c < len) {
+    switch (this.ch(c)) {
+    case CH_CR:
+      if (c+1 < len && this.ch(c+1) === CH_NL)
+        c++;
+    case CH_NL:
+      if (!nl)
+        nl = true;
+      c++;
+      this.newline(c);
+      this.c = c;
+      break;
+    case CH_MUL: // *
+      c++;
+      if (c < len && this.ch(c) === CH_DIV) {
+        c++;
+        this.setoff(c);
+        return nl;
+      }
+      break;
+    default:
+      c++;
+      break;
+    }
+  }
+
+  this.setoff(c);
+  this.err('comment.multi.is.unfinished');
+ 
+  return nl; // tolerance
+};
+
+},
+function(){
 this.ch_or_eof = function(offset) {
   if (offset >= this.src.length)
     return CH_EOF;
@@ -190,35 +280,324 @@ this.c0_to_c = function() {
 };
 
 this.next = function() {
-  if (this.c >= this.src.length) {
-    this.ttype = TOKEN_EOF;
-    return;
-  }
 
   this.c0 = this.c;
   this.col0 = this.col;
   this.li0 = this.li;
+
+  if (this.c >= this.src.length) {
+    this.ttype = TOKEN_EOF;
+    return;
+  }
 
   var ch = this.ch(this.c);
   if (isIDHead(ch))
     return this.readIdentifier();
   if (isNum(ch))
     return this.readNum();
-  if (ch === CH_SINGLE_QUOTE || ch === CH_MULTI_QUOTE)
+  switch (ch) {
+  case CH_SINGLE_QUOTE:
+  case CH_MULTI_QUOTE:
     return this.readString();
+  case CH_MIN:
+  case CH_ADD:
+    return this.readOp_add_min();
+  case CH_GREATER_THAN: 
+    return this.readOp_gt();
+  case CH_LESS_THAN:
+    return this.readOp_lt();
+  case CH_EXCLAMATION:
+  case CH_COMPLEMENT:
+    return this.readOp_unary();
+  case CH_AND:
+  case CH_OR:
+    return this.readOp_and_or();
+  case CH_EQUALITY_SIGN:
+    return this.readOp_eq();
+  case CH_XOR:
+  case CH_MODULO:
+    return this.readOp_other();
+  case CH_SINGLEDOT:
+    return this.readDot();
+  default:
+    return this.readSingleCharacter();
+  
+  }
 };
 
 },
 function(){
+// set the next position to `offset`, updating column along the way
 this.setoff = function(offset) {
   this.col += (offset-this.lastUsedOffset);
   this.lastUsedOffset = this.c = offset;
 };
 
+// set the character immediately following a newline as the index for column 0, updating li along the way
+// NOTE: this.c won't get updated
 this.newline = function(offset) {
   this.li++;
   this.col = 0;
   this.lastUsedOffset = offset;
+};
+
+this.lcFromOffset = function(offset) {
+  var li = 1, col = -1, c = 0, len = this.src.length, nl = false, isCRNL = false;
+  while (c <= len) {
+    switch (this.ch_or_eof(c)) {
+    case CH_CR:
+      if (c+1 < len && this.ch(c+1) === CH_NL) {
+        isCRNL = true;
+        c++;
+      }
+    case CH_NL:
+      col++;
+      nl = true;
+      break;
+    default:
+      col++;
+    }
+    if ((isCRNL ? c - 1 : c) === offset)
+      break;
+    if (nl) {
+     col = -1;
+     ++li;
+     nl = isCRNL = false;
+    }
+
+    ++c;
+  }
+
+  if ((isCRNL ? c - 1 : c) !== offset)
+    throw new Error("no lineCol for @"+offset);
+
+  return {line: li, column: col};
+};
+
+this.offsetFromLC = function(liRef, colRef) {
+  var li = 1, col = -1, c = 0, len = this.src.length, nl = false, isCRNL = false;
+  while (c <= len) {
+    switch (this.ch_or_eof(c)) {
+    case CH_CR:
+      if (c+1 < len && this.ch(c+1) === CH_NL) {
+        isCRNL = true;
+        c++;
+      }
+    case CH_NL:
+      col++;
+      nl = true;
+      break;
+    default:
+      col++;
+    }
+    if (li === liRef && col === colRef)
+      break;
+    if (nl) {
+      col = -1;
+      ++li;
+      nl = isCRNL = false;
+    }    
+
+    ++c;
+  }
+  
+  if (li !== liRef || col !== colRef)
+    throw new Error("No offset for ["+liRef+","+colRef+"]");
+
+  return isCRNL ? c - 1 : c;
+};
+
+},
+function(){
+this.readOp_add_min = function() {
+  var op = TOKEN_NONE, c = this.c, len = this.src.length;
+  c++;
+  if (c < len) {
+    var ch = this.ch(c-1);
+    switch (this.ch(c)) {
+    case CH_EQUALITY_SIGN:
+      c++;
+      op = TOKEN_OP_ASSIG;
+      this.prec = PREC_ASSIG;
+      break;
+    case ch:
+      c++;
+      op = TOKEN_AA_MM;
+      // +++ and --- are not allowed in source
+      if (c < len && this.ch(c) === ch)
+        this.err('aa.mm.has.same.after');
+      break;
+    }
+  }
+
+  if (op === TOKEN_NONE)
+    op = TOKEN_UNARY|TOKEN_BINARY;
+
+  this.ttype = op;
+  this.setoff(c);
+  this.traw = this.c0_to_c();
+};
+
+},
+function(){
+this.readOp_and_or = function() {
+  var c = this.c, len = this.src.length;
+  var ch = this.ch(c);
+  c++;
+  switch (c >= len ? CH_EOF : this.ch(c)) {
+  case CH_EQUALITY_SIGN:
+    c++;
+    this.ttype = TOKEN_OP_ASSIG;
+    this.prec = PREC_ASSIG;
+    break;
+  case ch:
+    c++
+    this.ttype = TOK_BINARY;
+    this.prec = ch === CH_OR ?
+      PREC_LOG_OR : PREC_LOG_AND;
+    break;
+  default:
+    this.ttype = TOK_BINARY;
+    this.prec = ch === CH_OR ?
+      PREC_BIT_OR : PREC_BIT_AND;
+  }
+
+  this.setoff(c);
+  this.traw = this.c0_to_c();
+};
+
+},
+function(){
+this.readOp_eq = function() {
+  var c = this.c, len = this.src.length;
+  c++;
+  switch (c >= len ? CH_EOF : this.ch(c)) {
+  case CH_EQUALITY_SIGN:
+    c++;
+    if (this.ch(c) === CH_EQUALITY_SIGN)
+      c++;
+    this.ttype = TOKEN_BINARY;
+    this.prec = PREC_EQ;
+    break;
+  default:
+    this.ttype = TOKEN_ASSIG;
+    this.prec = PREC_ASSIG;
+    break;
+  }
+
+  this.setoff(c);
+  this.traw = this.c0_to_c();
+};
+
+},
+function(){
+this.readOp_gt = function() {
+  var op = TOKEN_NONE, c = this.c, len = this.src.length;
+  c++; // the >
+  if (c < len) {
+    var ch = this.ch(c);
+    if (ch === CH_EQUALITY_SIGN) { // >=
+      c++;
+      op = TOKEN_BINARY;
+      this.prec = PREC_COMP;
+    } else if (ch === CH_GREATER_THAN) { // >> 
+      c++;
+      if (c < len) {
+        ch = this.ch(c);
+        if (ch === CH_EQUALITY_SIGN) { // >>=
+          c++;
+          op = TOKEN_OP_ASSIG;
+          this.prec = PREC_ASSIG;
+        } else if (ch === CH_GREATER_THAN) { // >>>
+          c++;
+          if (c < len) {
+            if (this.ch(c) === CH_EQUALITY_SIGN) {
+              c++;
+              op = TOKEN_OP_ASSIG;
+              this.prec = PREC_ASSIG;
+            }
+          }
+          if (op === TOKEN_NONE) {
+            op = TOKEN_BINARY;
+            this.prec = PREC_SH;
+          }
+        }
+      }
+      if (op === TOKEN_NONE) {
+        op = TOKEN_BINARY;
+        this.prec = PREC_SH;
+      }
+    }
+  }
+
+  if (op === TOKEN_NONE) {
+    op = TOKEN_BINARY;
+    this.prec = PREC_COMP;
+  }
+
+  this.setoff(c);
+  this.ttype = op;
+  this.traw = this.c0_to_c();
+};
+
+},
+function(){
+this.readOp_lt = function() {
+  var op = TOKEN_NONE, c = this.c, len = this.src.length;
+  c++; // the <
+  if (c < len) {
+    var ch = this.ch(c);
+    if (ch === CH_EQUALITY_SIGN) {
+      c++;
+      op = TOKEN_BINARY;
+      this.prec = PREC_COMP;
+    } else if (ch === CH_LESS_THAN) {
+      c++;
+      if (c < len) {
+        if (this.ch(c) === CH_EQUALITY_SIGN) {
+          c++;
+          op = TOKEN_OP_ASSIG;
+          this.prec = PREC_ASSIG;
+        }
+      }
+      if (op === TOKEN_NONE)
+        op = TOKEN_BINARY;
+        this.prec = PREC_SH;
+    }
+  }
+  if (op === TOKEN_NONE) {
+    op = TOKEN_BINARY;
+    this.prec = PREC_COMP;
+  }
+
+  this.setoff(c);
+  this.ttype = op;
+  this.traw = this.c0_to_c();
+};
+
+},
+function(){
+this.readOp_unary = function() {
+  var c = this.c, ch = this.ch(c);
+  c++;
+  if (ch === CH_EXCLAMATION) {
+    if (c < len && this.ch(c) === CH_EQUALITY_SIGN) {
+      c++;
+      if (c < len && this.ch(c) === CH_EQUALITY_SIGN)
+        c++;
+      this.ttype = TOKEN_BINARY;
+      this.prec = PREC_EQ;
+    } else {
+      this.ttype = TOKEN_UNARY;
+      this.prec = PREC_UNARY;
+    }
+  } else {
+    this.ttype = TOKEN_UNARY;
+    this.prec = PREC_UNARY;
+  }
+
+  this.setoff(c);
+  this.traw = this.c0_to_c();
 };
 
 },
@@ -551,12 +930,21 @@ function testTokens(num) {
       testParser.skipWhitespace();
       testParser.next();
 
+      var start = testParser.offsetFromLC(testParser.li0, testParser.col0);
+      var end = testParser.offsetFromLC(testParser.li, testParser.col);
+
+      assertEq_ea('token.start', testParser.c0, start);
+      assertEq_ea('token.end', testParser.c, end);
+  
+      assertEq_ea('token.raw.from.start.end', testParser.src.substring(start, end), tokens[e].traw);
+ 
       COMPARE_ATTRIBUTES.forEach(function(item) {
         if (tokens[e].ttype === TOKEN_EOF && item === 'traw')
           return;
 
         assertEq_ea(item, testParser[item], tokens[e][item]);
       });
+      
       ++e;
     } while (e < tokens.length);
   }

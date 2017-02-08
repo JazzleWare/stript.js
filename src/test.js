@@ -163,12 +163,21 @@ function testTokens(num) {
       testParser.skipWhitespace();
       testParser.next();
 
+      var start = testParser.offsetFromLC(testParser.li0, testParser.col0);
+      var end = testParser.offsetFromLC(testParser.li, testParser.col);
+
+      assertEq_ea('token.start', testParser.c0, start);
+      assertEq_ea('token.end', testParser.c, end);
+  
+      assertEq_ea('token.raw.from.start.end', testParser.src.substring(start, end), tokens[e].traw);
+ 
       COMPARE_ATTRIBUTES.forEach(function(item) {
         if (tokens[e].ttype === TOKEN_EOF && item === 'traw')
           return;
 
         assertEq_ea(item, testParser[item], tokens[e][item]);
       });
+      
       ++e;
     } while (e < tokens.length);
   }
