@@ -47,13 +47,24 @@ this.next = function() {
     return this.readOp_and_or();
   case CH_EQUALITY_SIGN:
     return this.readOp_eq();
+  case CH_MUL:
+    return this.readOp_mul();
   case CH_XOR:
+    return this.readOp_xor();
   case CH_MODULO:
-    return this.readOp_other();
-  case CH_SINGLEDOT:
-    return this.readDot();
+    return this.readOp_modulo();
   default:
     return this.readSingleCharacter();
   
   }
+};
+
+this.readSingleCharacter = function() {
+  var ch = this.src.charAt(this.c),
+      chCode = ch.charCodeAt(0);
+  if (chCode >= (1<<8) || chCode < 0)
+    this.err('char.src.not.in.range');
+  this.c++;
+  this.ttype = chCode;
+  this.traw = ch;
 };

@@ -177,7 +177,7 @@ function isNum(c) {
 
 function isIDHead(c) {
   return (c >= CH_a && c <= CH_z) ||
-         (c >= CH_A && c <= CH_z) ||
+         (c >= CH_A && c <= CH_Z) ||
          (c === CH_UNDERLINE || c === CH_$);
 }
 
@@ -312,15 +312,26 @@ this.next = function() {
     return this.readOp_and_or();
   case CH_EQUALITY_SIGN:
     return this.readOp_eq();
+  case CH_MUL:
+    return this.readOp_mul();
   case CH_XOR:
+    return this.readOp_xor();
   case CH_MODULO:
-    return this.readOp_other();
-  case CH_SINGLEDOT:
-    return this.readDot();
+    return this.readOp_modulo();
   default:
     return this.readSingleCharacter();
   
   }
+};
+
+this.readSingleCharacter = function() {
+  var ch = this.src.charAt(this.c),
+      chCode = ch.charCodeAt(0);
+  if (chCode >= (1<<8) || chCode < 0)
+    this.err('char.src.not.in.range');
+  this.c++;
+  this.ttype = chCode;
+  this.traw = ch;
 };
 
 },
@@ -576,6 +587,57 @@ this.readOp_lt = function() {
 
 },
 function(){
+this.readOp_modulo = function() {
+  var c = this.c, len = this.src.length;
+  c++;
+  if (c < len && this.ch(c) === CH_EQUALITY_SIGN) {
+    c++;
+    this.ttype = TOKEN_OP_ASSIG;
+    this.prec = PREC_ASSIG;
+  } else {
+    this.ttype = TOKEN_BINARY;
+    this.prec = PREC_MUL;
+  }
+
+  this.setoff(c);
+  this.traw = this.c0_to_c();
+};
+
+},
+function(){
+this.readOp_mul = function() {
+  var c = this.c, len = this.src.length;
+  c++;
+  switch (c < len ? this.ch(c) : CH_EOF) {
+  case CH_MUL:
+    c++;
+    if (c < len && this.ch(c) === CH_EQUALITY_SIGN) {
+      c++;
+      this.ttype = TOKEN_OP_ASSIG;
+      this.prec = PREC_ASSIG;
+    } else {
+      this.ttype = TOKEN_BINARY;
+      this.prec = PREC_EX;
+    }
+    break;
+
+  case CH_EQUALITY_SIGN:
+    c++;
+    this.ttype = TOKEN_OP_ASSIG;
+    this.prec = PREC_ASSIG;
+    break;
+
+  default:
+    this.ttype = TOKEN_BINARY;
+    this.prec = PREC_MUL;
+  }
+
+  this.setoff(c);
+  this.traw = this.c0_to_c();
+};
+
+},
+function(){
 this.readOp_unary = function() {
   var c = this.c, ch = this.ch(c), len = this.src.length;
   c++;
@@ -593,6 +655,24 @@ this.readOp_unary = function() {
   } else {
     this.ttype = TOKEN_UNARY;
     this.prec = PREC_UNARY;
+  }
+
+  this.setoff(c);
+  this.traw = this.c0_to_c();
+};
+
+},
+function(){
+this.readOp_xor = function() {
+  var c = this.c, len = this.src.length;
+  c++;
+  if (c < len && this.ch(c) === CH_EQUALITY_SIGN) {
+    c++;
+    this.ttype = TOKEN_OP_ASSIG;
+    this.prec = PREC_ASSIG;
+  } else {
+    this.ttype = TOKEN_BINARY;
+    this.prec = PREC_BIT_XOR;
   }
 
   this.setoff(c);
