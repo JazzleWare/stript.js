@@ -1,17 +1,10 @@
 this.indent = function() {
-  if (!this.lineStarted)
-    this.err('indent.not.at.line.start');
-  this.code += this.getOrCreateIndent(this.indentLevel+1);
+  this.indentLevel++; 
 };
 
 this.i = function() {
   this.indent();
   return this; 
-};
-
-this.startLine = function() {
-  this.insertNL();
-  this.indent();
 };
 
 this.l = function() {
@@ -32,6 +25,10 @@ this.e = function(n, prec, startStmt) {
 };
 
 this.write = function(rawStr) {
+  if (this.lineStarted) {
+    this.code += this.getOrCreateIndent(this.indentLevel);
+    this.lineStared = false;
+  }
   this.code += rawStr;
 };
 
@@ -41,6 +38,9 @@ this.w = function(rawStr) {
 };
 
 this.space = function() {
+  if (this.lineStarted)
+    this.err('useless.space');
+
   this.write(' ');
 };
 
@@ -63,6 +63,18 @@ this.wm = function() {
   return this;
 };
 
+this.unindent = function() {
+  if (this.indentLevel <= 0)
+    this.err('unindent.nowidth');
+
+  this.indentLevel--;
+};
+
+this.u = function() {
+  this.unindent();
+  return this;
+};
+
 this.getOrCreateIndent = function(indentLen) {
   var cache = this.indentCache;
   if (indentLen >= cache.length) {
@@ -73,3 +85,11 @@ this.getOrCreateIndent = function(indentLen) {
   return cache[indentLen];
 };
 
+this.startLine = function() {
+  this.insertNL();
+  this.lineStarted = true;
+};
+
+this.insertNL = function() {
+  this.code += '\n';
+};

@@ -3,6 +3,10 @@
 ;
 function Emitter(space) {
   this.space = arguments.length ? space : "  ";
+  this.indentCache = [""];
+  this.lineStarted = false;
+  this.indentLevel = 0;
+  this.code = "";
 }
 ;
 function Parser(src, mode) {
@@ -205,19 +209,12 @@ function char2int(ch) { return ch.charCodeAt(0); }
      }).call([
 [Emitter.prototype, [function(){
 this.indent = function() {
-  if (!this.lineStarted)
-    this.err('indent.not.at.line.start');
-  this.code += this.getOrCreateIndent(this.indentLevel+1);
+  this.indentLevel++; 
 };
 
 this.i = function() {
   this.indent();
   return this; 
-};
-
-this.startLine = function() {
-  this.insertNL();
-  this.indent();
 };
 
 this.l = function() {
@@ -238,6 +235,10 @@ this.e = function(n, prec, startStmt) {
 };
 
 this.write = function(rawStr) {
+  if (this.lineStarted) {
+    this.code += this.getOrCreateIndent(this.indentLevel);
+    this.lineStared = false;
+  }
   this.code += rawStr;
 };
 
@@ -247,6 +248,9 @@ this.w = function(rawStr) {
 };
 
 this.space = function() {
+  if (this.lineStarted)
+    this.err('useless.space');
+
   this.write(' ');
 };
 
@@ -269,6 +273,18 @@ this.wm = function() {
   return this;
 };
 
+this.unindent = function() {
+  if (this.indentLevel <= 0)
+    this.err('unindent.nowidth');
+
+  this.indentLevel--;
+};
+
+this.u = function() {
+  this.unindent();
+  return this;
+};
+
 this.getOrCreateIndent = function(indentLen) {
   var cache = this.indentCache;
   if (indentLen >= cache.length) {
@@ -279,6 +295,14 @@ this.getOrCreateIndent = function(indentLen) {
   return cache[indentLen];
 };
 
+this.startLine = function() {
+  this.insertNL();
+  this.lineStarted = true;
+};
+
+this.insertNL = function() {
+  this.code += '\n';
+};
 
 }]  ],
 [Parser.prototype, [function(){
@@ -922,4 +946,5 @@ null,
 null,
 null]);
 this.Parser = /* name */ Parser;
+this.Emitter = Emitter;
 ;}).call (function(){try{return module.exports;}catch(e){return this;}}.call(this))
