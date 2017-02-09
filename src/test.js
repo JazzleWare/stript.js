@@ -24,7 +24,7 @@ function range(min, max) {
 var ID_HEAD = range(CH_a, CH_z) + range(CH_A, CH_Z) + '$' + '_';
 var NUM = range(CH_0, CH_9);
 var ID_CONTINUE = ID_HEAD + NUM;
-var PUNCT = "!@#$%^&*()_+-=~`{}[]|:;<>,.?/\\"; // no \, ', or " for now
+var PUNCT = "@#()`{}[]:;,.?/\\"; // no \, ', or " for now
 var ESC = ['v', 'b', 'n', 'r', 't', 'f', '"', '\'', '\\'];
 
 var STR = ID_CONTINUE + PUNCT;
@@ -106,6 +106,39 @@ _randToken[TOKEN_STR] = function() {
   return tok;
 };
 
+var OP = [
+  [TOKEN_ASSIG, [PREC_ASSIG, '=']],
+  [TOKEN_UNARY, [PREC_UNARY, '!', '~']],
+  [TOKEN_BINARY,
+    [PREC_LOG_OR, '||'],
+    [PREC_LOG_AND, '&&'],
+    [PREC_BIT_OR, '|'],
+    [PREC_BIT_XOR, '^'],
+    [PREC_BIT_AND, '&'],
+    [PREC_EQ, '!=', '===', '==', '!='],
+    [PREC_COMP, '>', '<=', '<', '>='],
+    [PREC_SH, '>>>', '>>', '<<'],
+    [PREC_MUL, '%', '*'],
+    [PREC_EX, '**']],
+  [TOKEN_AA_MM, 
+    [PREC_UP, '++', '--']],
+  [TOKEN_OP_ASSIG, [PREC_ASSIG,
+    '^=', '&=', '-=', '+=', '**=',
+    '*=', '%=', '<<=', '>>>=', '|=', '>>=']]
+];
+
+function randOp() {
+  var op = OP[rand(0, OP.length-1)];
+  var opGroup = op[rand(1, op.length-1)];
+  return {
+    sp: false,
+    ttype: op[0],
+    traw: opGroup[rand(1, opGroup.length-1)],
+    prec: opGroup[0],
+    nl: false
+  };
+}
+
 function randTokens(num) {
   if (arguments.length === 0)
     num = 1;
@@ -114,23 +147,32 @@ function randTokens(num) {
   var prev_ttype = TOKEN_NONE;
 
   while (tokens.length !== num+1) {
-    var sp = !!rand(0,1), nl = !!rand(0,1);
+    var tok = null, sp = !!rand(0,1), nl = !!rand(0,1);
 
-    var ttype = tokens.length < num ?
-      TTYPES[rand(0, TTYPES.length-1)] : TOKEN_EOF;
+    if (tokens.length === num)
+      tok = { ttype: TOKEN_EOF, traw: "", nl: false, sp: false };
+    else if (rand(0,1))
+      tok = randOp();
+    else {
+      var ttype = TTYPES[rand(0, TTYPES.length-1)];
 
-    if (!sp && !nl)
-      while ((ttype === prev_ttype) || (prev_ttype === TOKEN_ID && ttype === TOKEN_NUM))
-        ttype = TTYPES[rand(0, TTYPES.length-1)];
+      if (!sp && !nl)
+        while ((ttype === prev_ttype) || (prev_ttype === TOKEN_ID && ttype === TOKEN_NUM))
+          ttype = TTYPES[rand(0, TTYPES.length-1)];
 
-    prev_ttype = ttype;
+      prev_ttype = ttype;
+      tok = {
+        ttype: ttype,
+        traw: ttype !== TOKEN_EOF ? (0, _randToken[ttype])() : "",
+        nl: false,
+        sp: false
+      };
+    }
 
-    tokens.push({
-      ttype: ttype,
-      traw: ttype !== TOKEN_EOF ? (0, _randToken[ttype])() : "",
-      nl: nl,
-      sp: sp
-    });
+    tok.sp = sp;
+    tok.nl = nl;
+
+    tokens.push(tok);
   }
 
   return tokens;
@@ -140,7 +182,14 @@ function tokens2src(tokens) {
   var str = "", i = 0;
   while (i < tokens.length) {
     var tok = tokens[i++];
-    str += randSpace_sn(tok.sp, tok.nl);
+    var space = randSpace_sn(tok.sp, tok.nl);
+    str += space;
+    if ((tok.ttype & TOKEN_OP) &&
+       space.length === 0) {
+      tok.sp = true;
+      str += ' ';
+    }
+
     str += tok.traw;
   }
   return str;
@@ -177,6 +226,9 @@ function testTokens(num) {
 
         assertEq_ea(item, testParser[item], tokens[e][item]);
       });
+
+      if (tokens[e].ttype & (TOKEN_ASSIG|TOKEN_OP_ASSIG|TOKEN_BINARY|TOKEN_UNARY))
+        assertEq_ea('prec', testParser.prec, tokens[e].prec);
       
       ++e;
     } while (e < tokens.length);

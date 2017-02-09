@@ -145,7 +145,9 @@ var TOKEN_UNARY = TOKEN_ASSIG << 1;
 var TOKEN_BINARY = TOKEN_UNARY << 1;
 var TOKEN_AA_MM = TOKEN_BINARY << 1;
 var TOKEN_OP_ASSIG = TOKEN_AA_MM << 1;
-var TOKEN_OP = TOKEN_ASSIG|TOKEN_UNARY|TOKEN_BINARY|TOKEN_AA_MM|TOKEN_OP_ASSIG;
+var TOKEN_XOR = TOKEN_OP_ASSIG << 1;
+var TOKEN_DIV = TOKEN_XOR << 1;
+var TOKEN_OP = TOKEN_ASSIG|TOKEN_UNARY|TOKEN_BINARY|TOKEN_AA_MM|TOKEN_OP_ASSIG|TOKEN_XOR|TOKEN_DIV;
 var TOKEN_LIT = TOKEN_NUM|TOKEN_STR;
 var TOKEN_OBJ_KEY = TOKEN_ID|TOKEN_LIT;
 
@@ -163,7 +165,7 @@ var PREC_BIT_XOR = nextl(PREC_BIT_OR); // ^
 var PREC_BIT_AND = nextl(PREC_BIT_XOR); // &
 var PREC_EQ = nextl(PREC_BIT_AND); // !=, ===, ==, !==
 var PREC_COMP = nextl(PREC_EQ); // >, <=, <, >=, instanceof, in
-var PREC_SH = nextl(PREC_COMP); // >>>, <<, >>
+var PREC_SH = nextl(PREC_COMP); // >>>, >>, <<
 var PREC_ADD = nextl(PREC_SH); // +, -
 var PREC_MUL = nextl(PREC_ADD); // *, /
 var PREC_EX = nextl(PREC_MUL); // **
@@ -201,7 +203,84 @@ function char2int(ch) { return ch.charCodeAt(0); }
              def[1][e++].call(def[0]);
        }
      }).call([
-null,
+[Emitter.prototype, [function(){
+this.indent = function() {
+  if (!this.lineStarted)
+    this.err('indent.not.at.line.start');
+  this.code += this.getOrCreateIndent(this.indentLevel+1);
+};
+
+this.i = function() {
+  this.indent();
+  return this; 
+};
+
+this.startLine = function() {
+  this.insertNL();
+  this.indent();
+};
+
+this.l = function() {
+  this.startLine();
+  return this; 
+};
+
+var emitters = {};
+this.emit = function(n, prec, startStmt) {
+  if (HAS.call(emitters, n.type))
+    return emitters[n.type].call(this, n, prec, startStmt);
+  this.err('unknow.node');
+};
+
+this.e = function(n, prec, startStmt) {
+  this.emit(n, prec, startStmt); 
+ return this; 
+};
+
+this.write = function(rawStr) {
+  this.code += rawStr;
+};
+
+this.w = function(rawStr) {
+  this.write(rawStr);
+  return this;
+};
+
+this.space = function() {
+  this.write(' ');
+};
+
+this.s = function() {
+  this.space();
+  return this;
+};
+
+this.writeMulti =
+this.wm = function() {
+  var i = 0;
+  while (i < arguments.length) {
+    var str = arguments[i++];
+    if (str === ' ')
+      this.space();
+    else
+      this.write(str);
+  }
+
+  return this;
+};
+
+this.getOrCreateIndent = function(indentLen) {
+  var cache = this.indentCache;
+  if (indentLen >= cache.length) {
+    if (indentLen !== cache.length)
+      this.err('inceremental.indent');
+    cache.push(cache[cache.length-1] + this.space);
+  }
+  return cache[indentLen];
+};
+
+
+}]  ],
 [Parser.prototype, [function(){
 this.readLineComment = function() {
   var c = this.c, len = this.src.length;
@@ -870,7 +949,7 @@ function range(min, max) {
 var ID_HEAD = range(CH_a, CH_z) + range(CH_A, CH_Z) + '$' + '_';
 var NUM = range(CH_0, CH_9);
 var ID_CONTINUE = ID_HEAD + NUM;
-var PUNCT = "!@#$%^&*()_+-=~`{}[]|:;<>,.?/\\"; // no \, ', or " for now
+var PUNCT = "@#()`{}[]:;,.?/\\"; // no \, ', or " for now
 var ESC = ['v', 'b', 'n', 'r', 't', 'f', '"', '\'', '\\'];
 
 var STR = ID_CONTINUE + PUNCT;
@@ -952,6 +1031,39 @@ _randToken[TOKEN_STR] = function() {
   return tok;
 };
 
+var OP = [
+  [TOKEN_ASSIG, [PREC_ASSIG, '=']],
+  [TOKEN_UNARY, [PREC_UNARY, '!', '~']],
+  [TOKEN_BINARY,
+    [PREC_LOG_OR, '||'],
+    [PREC_LOG_AND, '&&'],
+    [PREC_BIT_OR, '|'],
+    [PREC_BIT_XOR, '^'],
+    [PREC_BIT_AND, '&'],
+    [PREC_EQ, '!=', '===', '==', '!='],
+    [PREC_COMP, '>', '<=', '<', '>='],
+    [PREC_SH, '>>>', '>>', '<<'],
+    [PREC_MUL, '%', '*'],
+    [PREC_EX, '**']],
+  [TOKEN_AA_MM, 
+    [PREC_UP, '++', '--']],
+  [TOKEN_OP_ASSIG, [PREC_ASSIG,
+    '^=', '&=', '-=', '+=', '**=',
+    '*=', '%=', '<<=', '>>>=', '|=', '>>=']]
+];
+
+function randOp() {
+  var op = OP[rand(0, OP.length-1)];
+  var opGroup = op[rand(1, op.length-1)];
+  return {
+    sp: false,
+    ttype: op[0],
+    traw: opGroup[rand(1, opGroup.length-1)],
+    prec: opGroup[0],
+    nl: false
+  };
+}
+
 function randTokens(num) {
   if (arguments.length === 0)
     num = 1;
@@ -960,23 +1072,32 @@ function randTokens(num) {
   var prev_ttype = TOKEN_NONE;
 
   while (tokens.length !== num+1) {
-    var sp = !!rand(0,1), nl = !!rand(0,1);
+    var tok = null, sp = !!rand(0,1), nl = !!rand(0,1);
 
-    var ttype = tokens.length < num ?
-      TTYPES[rand(0, TTYPES.length-1)] : TOKEN_EOF;
+    if (tokens.length === num)
+      tok = { ttype: TOKEN_EOF, traw: "", nl: false, sp: false };
+    else if (rand(0,1))
+      tok = randOp();
+    else {
+      var ttype = TTYPES[rand(0, TTYPES.length-1)];
 
-    if (!sp && !nl)
-      while ((ttype === prev_ttype) || (prev_ttype === TOKEN_ID && ttype === TOKEN_NUM))
-        ttype = TTYPES[rand(0, TTYPES.length-1)];
+      if (!sp && !nl)
+        while ((ttype === prev_ttype) || (prev_ttype === TOKEN_ID && ttype === TOKEN_NUM))
+          ttype = TTYPES[rand(0, TTYPES.length-1)];
 
-    prev_ttype = ttype;
+      prev_ttype = ttype;
+      tok = {
+        ttype: ttype,
+        traw: ttype !== TOKEN_EOF ? (0, _randToken[ttype])() : "",
+        nl: false,
+        sp: false
+      };
+    }
 
-    tokens.push({
-      ttype: ttype,
-      traw: ttype !== TOKEN_EOF ? (0, _randToken[ttype])() : "",
-      nl: nl,
-      sp: sp
-    });
+    tok.sp = sp;
+    tok.nl = nl;
+
+    tokens.push(tok);
   }
 
   return tokens;
@@ -986,7 +1107,14 @@ function tokens2src(tokens) {
   var str = "", i = 0;
   while (i < tokens.length) {
     var tok = tokens[i++];
-    str += randSpace_sn(tok.sp, tok.nl);
+    var space = randSpace_sn(tok.sp, tok.nl);
+    str += space;
+    if ((tok.ttype & TOKEN_OP) &&
+       space.length === 0) {
+      tok.sp = true;
+      str += ' ';
+    }
+
     str += tok.traw;
   }
   return str;
@@ -1023,6 +1151,9 @@ function testTokens(num) {
 
         assertEq_ea(item, testParser[item], tokens[e][item]);
       });
+
+      if (tokens[e].ttype & (TOKEN_ASSIG|TOKEN_OP_ASSIG|TOKEN_BINARY|TOKEN_UNARY))
+        assertEq_ea('prec', testParser.prec, tokens[e].prec);
       
       ++e;
     } while (e < tokens.length);

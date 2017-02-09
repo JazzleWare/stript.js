@@ -116,7 +116,9 @@ var TOKEN_UNARY = TOKEN_ASSIG << 1;
 var TOKEN_BINARY = TOKEN_UNARY << 1;
 var TOKEN_AA_MM = TOKEN_BINARY << 1;
 var TOKEN_OP_ASSIG = TOKEN_AA_MM << 1;
-var TOKEN_OP = TOKEN_ASSIG|TOKEN_UNARY|TOKEN_BINARY|TOKEN_AA_MM|TOKEN_OP_ASSIG;
+var TOKEN_XOR = TOKEN_OP_ASSIG << 1;
+var TOKEN_DIV = TOKEN_XOR << 1;
+var TOKEN_OP = TOKEN_ASSIG|TOKEN_UNARY|TOKEN_BINARY|TOKEN_AA_MM|TOKEN_OP_ASSIG|TOKEN_XOR|TOKEN_DIV;
 var TOKEN_LIT = TOKEN_NUM|TOKEN_STR;
 var TOKEN_OBJ_KEY = TOKEN_ID|TOKEN_LIT;
 
@@ -134,7 +136,7 @@ var PREC_BIT_XOR = nextl(PREC_BIT_OR); // ^
 var PREC_BIT_AND = nextl(PREC_BIT_XOR); // &
 var PREC_EQ = nextl(PREC_BIT_AND); // !=, ===, ==, !==
 var PREC_COMP = nextl(PREC_EQ); // >, <=, <, >=, instanceof, in
-var PREC_SH = nextl(PREC_COMP); // >>>, <<, >>
+var PREC_SH = nextl(PREC_COMP); // >>>, >>, <<
 var PREC_ADD = nextl(PREC_SH); // +, -
 var PREC_MUL = nextl(PREC_ADD); // *, /
 var PREC_EX = nextl(PREC_MUL); // **
