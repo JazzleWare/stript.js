@@ -1,5 +1,5 @@
 this.readOp_unary = function() {
-  var c = this.c, ch = this.ch(c);
+  var c = this.c, ch = this.ch(c), len = this.src.length;
   c++;
   if (ch === CH_EXCLAMATION) {
     if (c < len && this.ch(c) === CH_EQUALITY_SIGN) {

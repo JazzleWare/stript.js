@@ -78,13 +78,11 @@ var CH_CR = CH_CARRIAGE_RETURN,
     CH_NL = CH_LINE_FEED,
     CH_EOF = -1;
 
-var INTBITLEN = (function() { var i = 0;
-  while ( 0 < (1 << (i++)))
-     if (i >= 512) return 8;
-
-  return i;
-}());
-
+var INTBITLEN = function() {
+  var maxBits = ~0, bitLen = 0;
+  while (maxBits &= (1<<bitLen++));
+  return bitLen;
+}();
 
 var D_INTBITLEN = 0, M_INTBITLEN = INTBITLEN - 1;
 while ( M_INTBITLEN >> (++D_INTBITLEN) );

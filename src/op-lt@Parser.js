@@ -16,9 +16,10 @@ this.readOp_lt = function() {
           this.prec = PREC_ASSIG;
         }
       }
-      if (op === TOKEN_NONE)
+      if (op === TOKEN_NONE) {
         op = TOKEN_BINARY;
         this.prec = PREC_SH;
+      }
     }
   }
   if (op === TOKEN_NONE) {

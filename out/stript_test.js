@@ -107,13 +107,11 @@ var CH_CR = CH_CARRIAGE_RETURN,
     CH_NL = CH_LINE_FEED,
     CH_EOF = -1;
 
-var INTBITLEN = (function() { var i = 0;
-  while ( 0 < (1 << (i++)))
-     if (i >= 512) return 8;
-
-  return i;
-}());
-
+var INTBITLEN = function() {
+  var maxBits = ~0, bitLen = 0;
+  while (maxBits &= (1<<bitLen++));
+  return bitLen;
+}();
 
 var D_INTBITLEN = 0, M_INTBITLEN = INTBITLEN - 1;
 while ( M_INTBITLEN >> (++D_INTBITLEN) );
@@ -452,12 +450,12 @@ this.readOp_and_or = function() {
     break;
   case ch:
     c++
-    this.ttype = TOK_BINARY;
+    this.ttype = TOKEN_BINARY;
     this.prec = ch === CH_OR ?
       PREC_LOG_OR : PREC_LOG_AND;
     break;
   default:
-    this.ttype = TOK_BINARY;
+    this.ttype = TOKEN_BINARY;
     this.prec = ch === CH_OR ?
       PREC_BIT_OR : PREC_BIT_AND;
   }
@@ -560,9 +558,10 @@ this.readOp_lt = function() {
           this.prec = PREC_ASSIG;
         }
       }
-      if (op === TOKEN_NONE)
+      if (op === TOKEN_NONE) {
         op = TOKEN_BINARY;
         this.prec = PREC_SH;
+      }
     }
   }
   if (op === TOKEN_NONE) {
@@ -578,7 +577,7 @@ this.readOp_lt = function() {
 },
 function(){
 this.readOp_unary = function() {
-  var c = this.c, ch = this.ch(c);
+  var c = this.c, ch = this.ch(c), len = this.src.length;
   c++;
   if (ch === CH_EXCLAMATION) {
     if (c < len && this.ch(c) === CH_EQUALITY_SIGN) {

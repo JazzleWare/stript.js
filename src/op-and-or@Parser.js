@@ -10,12 +10,12 @@ this.readOp_and_or = function() {
     break;
   case ch:
     c++
-    this.ttype = TOK_BINARY;
+    this.ttype = TOKEN_BINARY;
     this.prec = ch === CH_OR ?
       PREC_LOG_OR : PREC_LOG_AND;
     break;
   default:
-    this.ttype = TOK_BINARY;
+    this.ttype = TOKEN_BINARY;
     this.prec = ch === CH_OR ?
       PREC_BIT_OR : PREC_BIT_AND;
   }
