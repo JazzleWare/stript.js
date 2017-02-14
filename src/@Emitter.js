@@ -1,5 +1,5 @@
-function Emitter(space) {
-  this.space = arguments.length ? space : "  ";
+function Emitter(spaceStr) {
+  this.spaceStr = arguments.length ? spaceStr : "  ";
   this.indentCache = [""];
   this.lineStarted = false;
   this.indentLevel = 0;

@@ -1,8 +1,8 @@
 (function(){
 "use strict";
 ;
-function Emitter(space) {
-  this.space = arguments.length ? space : "  ";
+function Emitter(spaceStr) {
+  this.spaceStr = arguments.length ? spaceStr : "  ";
   this.indentCache = [""];
   this.lineStarted = false;
   this.indentLevel = 0;
@@ -177,11 +177,19 @@ var PREC_UNARY = nextr(PREC_EX); // delete, void, -, +, typeof; not really a rig
 var PREC_UP = nextr(PREC_UNARY); // ++, --; not really a right-associative thing
 
 ;
+var emitters = {};
+;
 var IM_STMT = 1,
     IM_EXPR = IM_STMT << 1,
     STMT_NULLABLE = IM_EXPR << 1;
 var EXPR_NONE = 0, EXPR_NULLABLE = 1;
 var NL = 1, SP = NL << 1;
+
+var EC_NONE = 0,
+    EC_NEW_HEAD = 1,
+    EC_START_STMT = 2;
+
+var STMT_NONE = 0;
 ;
 function isNum(c) {
   return c >= CH_0 && c <= CH_9; 
@@ -228,7 +236,6 @@ this.l = function() {
   return this; 
 };
 
-var emitters = {};
 this.emit = function(n, prec, startStmt) {
   if (HAS.call(emitters, n.type))
     return emitters[n.type].call(this, n, prec, startStmt);
@@ -243,7 +250,7 @@ this.e = function(n, prec, startStmt) {
 this.write = function(rawStr) {
   if (this.lineStarted) {
     this.code += this.getOrCreateIndent(this.indentLevel);
-    this.lineStared = false;
+    this.lineStarted = false;
   }
   this.code += rawStr;
 };
@@ -296,7 +303,7 @@ this.getOrCreateIndent = function(indentLen) {
   if (indentLen >= cache.length) {
     if (indentLen !== cache.length)
       this.err('inceremental.indent');
-    cache.push(cache[cache.length-1] + this.space);
+    cache.push(cache[cache.length-1] + this.spaceStr);
   }
   return cache[indentLen];
 };
@@ -312,23 +319,57 @@ this.insertNL = function() {
 
 },
 function(){
-this.emitIf = function(n, prec, isVal) {
-  this.wm('if',' ','(');
-  this.emit(n.test, PREC_NONE, true);
-  this.w(')');
-  this.emitDependentBlock(n.consequent);
-  if (!n.alternate)
-    return;
-  this.wm(' ','else');
-  this.emitDependentBlock(n.alternate)
+this.emitDependentBlock = function(n, isElse) {
+  if (n.type === 'BlockStatement')
+    this.s().emitBlock(n, PREC_NONE, EC_START_STMT);
+  else if (isElse && n.type === 'IfStatement')
+    this.s().emit(n, PREC_NONE, EC_START_STMT);
+  else 
+    this.i().l().e(n, PREC_NONE, EC_START_STMT).u();
+};
+
+emitters['BlockStatement'] = 
+this.emitBlock = function(n, prec, flags) {
+  this.w('{');
+  var list = n.body, i = 0;
+  if (list.length > 0) {
+    this.i();
+    while (i < list.length) {
+      this.l().e(list[i++], PREC_NONE, EC_START_STMT);
+    }
+    this.u().l()
+  }
+  this.w('}');
 };
 
 },
 function(){
-this.emitProgram = function(n, prec, isStmt) {
-  ASSERT.call(prec === PREC_NONE, 'prec must be PREC_NONE while emitting a Program node');
-  ASSERT.call(isStatement === true, 'isStmt must be true while emitting a Program node');
-  
+emitters['ExpressionStatement'] = function(n, prec, flags) {
+  this.e(n.expression, prec, EC_START_STMT).w(';');
+};
+
+},
+function(){
+emitters['IfStatement'] = function(n, prec, flags) {
+  this.wm('if',' ','(');
+  this.emit(n.test, PREC_NONE, EC_NONE);
+  this.w(')');
+  this.emitDependentBlock(n.consequent);
+  if (!n.alternate)
+    return;
+  this.l().w('else');
+  this.emitDependentBlock(n.alternate, true);
+};
+
+},
+function(){
+emitters['Identifier'] = function(n, prec, flags) {
+  this.write(n.name);
+};
+
+},
+function(){
+emitters['Program'] = function(n, prec, isStmt) {
   var list = n.body, i = 0;
   while (i < list.length) {
     var stmt = list[i++];
@@ -1025,13 +1066,47 @@ function(){
 this.parseExprStatementOrID = function(idMode) {
   if (idMode & IM_EXPR)
     return this.id();
-  return this.parseExpr(EXPR_NONE);
+  return this.parseExprStmt(STMT_NONE);
 };
 
 },
 function(){
-this.parseExprStatement = function() {
-  return this.parseExpr(EXPR_NULLABLE);
+this.parseExprStmt = function(stmtFlags) {
+  var e = this.parseExpr(
+    (stmtFlags & STMT_NULLABLE) ? EXPR_NULLABLE : STMT_NONE);
+
+  if (e === null)
+    return null;
+
+  var n = { type: 'ExpressionStatement', expression: e },
+      isChecked = this.chkExprStmtTrail(n);
+  this.verifyExprStmt(n, isChecked);
+  return n;
+};
+
+this.chkExprStmtTrail = function() {
+  ASSERT.call(this, !(this.ttype & TOKEN_OP),
+    'no operator is allowed to come after an expression statement');
+
+  TRAIL:
+  if (this.tokPeek(CH_SEMI)) {
+    ASSERT.call(this, !this.nl, 
+      'a semicolon can not have a newline before it');
+    this.next();
+    ASSERT.call(this, this.ttype !== CH_RCURLY,
+      'a semicolon can not have a } after it');
+    ASSERT.call(this, this.ttype !== TOKEN_EOF,
+      'a semicolon can not come as the last token');
+    if (!this.nl)
+      break TRAIL;
+    ASSERT.call(this, this.ttype & TOKEN_OP,
+      'a semicolon that is followed by a newline must have an operator after that newline');
+  } else if (!this.nl) {
+    ASSERT.call(this, this.ttype === TOKEN_EOF,
+      'eof or newline was expected');
+  }
+  
+  return false;
 };
 
 },
@@ -1114,7 +1189,26 @@ this.parseStatement = function(stmtFlags) {
   if (this.ttype === TOKEN_ID)
     return this.parseElemStartingWithAnID(IM_STMT);
 
-  return this.parseExprStatement(stmtFlags);
+  return this.parseExprStmt(stmtFlags);
+};
+
+this.chkStmtTrail = function() {
+  if (this.tokPeek(CH_SEMI))
+    this.semi();
+  else {
+    ASSERT.call(this, !this.nl,
+      'a statement must either end in a semicolon or a newline');
+  }
+};
+
+this.semi = function() {
+  ASSERT.call(this, !this.nl,
+    'a semicolon can not have a newline before it');
+  this.next();
+  ASSERT.call(
+    this,
+    this.ttype !== CH_RCURLY && this.ttype !== TOKEN_EOF,
+    'a semicolon can not have a } after it, nor can it appear as the last input token');
 };
 
 },
@@ -1284,6 +1378,10 @@ this.ensureStmt_soft = function(idMode) {
 
 },
 function(){
+this.verifyExprStmt = function(n, isChecked) {};
+
+},
+function(){
 this.verifyIfTest = function(test) {};
 
 }]  ],
@@ -1313,6 +1411,7 @@ this.transformProgram = function(n, pushTarget, isVal) {
 };
 
 }]  ],
+null,
 null,
 null,
 null]);

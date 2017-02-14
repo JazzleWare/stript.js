@@ -12,7 +12,6 @@ this.l = function() {
   return this; 
 };
 
-var emitters = {};
 this.emit = function(n, prec, startStmt) {
   if (HAS.call(emitters, n.type))
     return emitters[n.type].call(this, n, prec, startStmt);
@@ -27,7 +26,7 @@ this.e = function(n, prec, startStmt) {
 this.write = function(rawStr) {
   if (this.lineStarted) {
     this.code += this.getOrCreateIndent(this.indentLevel);
-    this.lineStared = false;
+    this.lineStarted = false;
   }
   this.code += rawStr;
 };
@@ -80,7 +79,7 @@ this.getOrCreateIndent = function(indentLen) {
   if (indentLen >= cache.length) {
     if (indentLen !== cache.length)
       this.err('inceremental.indent');
-    cache.push(cache[cache.length-1] + this.space);
+    cache.push(cache[cache.length-1] + this.spaceStr);
   }
   return cache[indentLen];
 };

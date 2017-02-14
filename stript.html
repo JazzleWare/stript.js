@@ -4,14 +4,18 @@
   </head>
 
   <body>
-    <textarea rows="12" cols="120" id="codeArea">if a {}</textarea>
+    <textarea rows="12" cols="120" id="codeArea">if a { if b {} } else if e {} else { if l {} }</textarea>
     <button onclick="parseCode()">N</button>
     <script src="out/stript.js"></script>
     <script>
       this.parseCode = function() {
         var codeArea = document.getElementById('codeArea');
         var result = new Parser(codeArea.value).parseProgram();
+        var e = new Emitter();
+        e.emit(result);
         console.log(result);
+        console.log(codeArea.value);
+        console.log(e.code);
       }
     </script>
   </body>

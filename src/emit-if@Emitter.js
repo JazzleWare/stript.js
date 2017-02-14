@@ -1,10 +1,10 @@
-this.emitIf = function(n, prec, isVal) {
+emitters['IfStatement'] = function(n, prec, flags) {
   this.wm('if',' ','(');
-  this.emit(n.test, PREC_NONE, true);
+  this.emit(n.test, PREC_NONE, EC_NONE);
   this.w(')');
   this.emitDependentBlock(n.consequent);
   if (!n.alternate)
     return;
-  this.wm(' ','else');
-  this.emitDependentBlock(n.alternate)
+  this.l().w('else');
+  this.emitDependentBlock(n.alternate, true);
 };
