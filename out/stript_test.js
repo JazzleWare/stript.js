@@ -177,6 +177,12 @@ var PREC_UNARY = nextr(PREC_EX); // delete, void, -, +, typeof; not really a rig
 var PREC_UP = nextr(PREC_UNARY); // ++, --; not really a right-associative thing
 
 ;
+var IM_STMT = 1,
+    IM_EXPR = IM_STMT << 1,
+    STMT_NULLABLE = IM_EXPR << 1;
+var EXPR_NONE = 0, EXPR_NULLABLE = 1;
+var NL = 1, SP = NL << 1;
+;
 function isNum(c) {
   return c >= CH_0 && c <= CH_9; 
 }
@@ -304,6 +310,33 @@ this.insertNL = function() {
   this.code += '\n';
 };
 
+},
+function(){
+this.emitIf = function(n, prec, isVal) {
+  this.wm('if',' ','(');
+  this.emit(n.test, PREC_NONE, true);
+  this.w(')');
+  this.emitDependentBlock(n.consequent);
+  if (!n.alternate)
+    return;
+  this.wm(' ','else');
+  this.emitDependentBlock(n.alternate)
+};
+
+},
+function(){
+this.emitProgram = function(n, prec, isStmt) {
+  ASSERT.call(prec === PREC_NONE, 'prec must be PREC_NONE while emitting a Program node');
+  ASSERT.call(isStatement === true, 'isStmt must be true while emitting a Program node');
+  
+  var list = n.body, i = 0;
+  while (i < list.length) {
+    var stmt = list[i++];
+    i > 0 && this.startLine();
+    this.emit(stmt);
+  }
+};
+
 }]  ],
 [Parser.prototype, [function(){
 this.readLineComment = function() {
@@ -381,6 +414,7 @@ this.c0_to_c = function() {
 };
 
 this.next = function() {
+  this.skipWhitespace();
 
   this.c0 = this.c;
   this.col0 = this.col;
@@ -435,6 +469,37 @@ this.readSingleCharacter = function() {
   this.c++;
   this.ttype = chCode;
   this.traw = ch;
+};
+
+},
+function(){
+this.no = function(flags) {
+  if (flags & NL) {
+    ASSERT.call(this, !this.nl,
+      'newline is not allowed before the current lookahead');
+  }
+  if (flags & SP) {
+    ASSERT.call(this, !this.sp,
+      'white- space is not allwed before the current lookahead');
+  }
+};
+
+this.peekID = function(idName) {
+  if (this.ttype !== TOKEN_ID)
+    return false;
+  return this.traw === idName;
+};
+
+this.tokPeek = function(ttype) {
+  return this.ttype === ttype;
+};
+
+this.tokGet = function(ttype) {
+  if (this.tokPeek(ttype)) {
+    this.next();
+    return true;
+  }
+  return false;
 };
 
 },
@@ -784,6 +849,276 @@ this.readOp_xor = function() {
 
 },
 function(){
+this.parseBlock = function() {
+  var list = [], stmt = null;
+  var n = {
+    type: 'BlockStatement',
+    body: list
+  };
+  this.next(); // {
+  while (stmt = this.parseStatement(STMT_NULLABLE))
+    list.push(stmt);
+
+  if (!this.tokGet(CH_RCURLY))
+    this.err('unfinished.block');
+
+  return n;
+};
+
+},
+function(){
+this.parseDependentBlock = function() {
+  this.no(NL);
+  if (this.tokPeek(CH_LCURLY))
+    return this.parseBlock();
+  if (!this.tokPeek(CH_COLON))
+    this.err('expected.:');
+  return this.parseSimpleStatement();
+};
+
+},
+function(){
+// idMode: stmt, expr, validate
+this.parseElemStartingWithAnID = function(idMode) {
+  var id = this.traw, elem = null;
+  switch (id.length) {
+  case 1:
+    return this.parseExprStatementOrID(idMode);
+  case 2:
+    switch (id) {
+    case 'do': return this.parseDo(idMode);
+    case 'if': return this.parseIf(idMode);
+    case 'in': return this.errNotAnID(idMode);
+    }
+    break;
+  case 3:
+    switch (id) {
+    case 'new': return this.errNotAnID(idMode);
+    case 'for': return this.parseFor(idMode);
+    case 'try': return this.errNotAnID(idMode);
+    case 'var': return this.parseVar(idMode);
+    }
+    break;
+  case 4:
+    switch (id) {
+    case 'null': return this.parseNull(idMode);
+    case 'void': return this.parseVDT(idMode);
+    case 'this': return this.parseThis(idMode);
+    case 'true': return this.parseTrue(idMode);
+    case 'case':
+      return idMode === IM_STMT ? null : this.errNotAnID(idMode);
+    case 'else': return this.errNotAnID(idMode);
+    case 'with': return this.parseWith(idMode);
+    case 'enum': return this.parseEnum();
+    }
+    break;
+  case 5:
+    switch (id) {
+    case 'class': return this.parseClass(idMode);
+    case 'super': return this.parseSuper(idMode); 
+    case 'break': return this.parseBreak(idMode);
+    case 'throw': return this.parseThrow(idMode);
+    case 'catch': return this.errNotAnID(idMode);
+    case 'const': return this.parseConst(idMode);
+    case 'while': return this.parseWhile(idMode);
+    case 'false': return this.parseFalse(idMode);
+    }
+    break;
+  case 6:
+    switch (id) {
+    case 'static': return this.errNotAnID(idMode);
+    case 'delete':
+    case 'typeof':
+      return this.parseVDT(idMode);
+    case 'export': return this.parseExport(idMode);
+    case 'import': return this.parseImport(idMode);
+    case 'return': return this.parseReturn(idMode);
+    case 'switch': return this.parseSwitch(idMode);
+    case 'public': return this.errNotAnID(idMode);
+    }
+    break;
+  case 7:
+    switch (id) {
+    case 'package':
+    case 'private':
+      return this.errNotAnID(idMode);
+    case 'default':
+      return idMode === IM_STMT ? null : this.errNotAnID(idMode);
+    case 'extends':
+    case 'finally':
+      return this.errNotAnID(idMode);
+    }
+    break;
+  case 8:
+    switch (id) {
+    case 'function': return this.parseFunction(idMode);
+    case 'debugger': return this.parseDebugger(idMode);
+    case 'continue': return this.parseContinue(idMode);
+    }
+    break;
+  case 9:
+    switch (id) {
+    case 'interface':
+    case 'protected':
+      return this.errNotAnID(idMode);
+    }
+    break;
+  case 10:
+    switch (id) {
+    case 'instanceof':
+    case 'implements':
+      return this.errNotAnID(idMode);
+    }
+    break;
+  }
+
+  return this.parseExprStatementOrID(idMode);
+};
+
+},
+function(){
+this.parseExprHead = function(exFlags) {
+  var head = null;
+
+  switch (this.ttype) {
+  case TOKEN_ID:
+    head = this.parseElemStartingWithAnID(IM_EXPR);
+    break;
+  case TOKEN_STR: head = this.parseStr(); break;
+  case TOKEN_NUM: head = this.parseNum(); break;
+  case TOKEN_BINARY|TOKEN_UNARY:
+  case TOKEN_UNARY: return null;
+  case CH_LCURLY: head = this.parseObj(); break;
+  case CH_LPAREN: head = this.parseParen(); break;
+  case CH_LSQBRACKET: head = this.parseArray(); break;
+  case TOKEN_BINARY:
+    if (this.traw === '<') {
+      head = this.parseAngleFunc();
+      break;
+    }
+  case TOKEN_DIV: head = this.parseRegex(); break;
+  default: return null;
+  }
+
+  TRAILER:
+  while (true) {
+    switch (this.ttype) {
+    case CH_SINGLEDOT:
+      head = this.parseMem(head, false);
+      break;
+    case CH_LPAREN:
+      head = this.parseCall(head);
+      break;
+    case CH_LSQBRACKET:
+      head = this.parseMem(head, true);
+      break;
+    default:
+      break TRAILER;
+    }
+  }
+
+  return head;
+};
+
+},
+function(){
+this.parseExprStatementOrID = function(idMode) {
+  if (idMode & IM_EXPR)
+    return this.id();
+  return this.parseExpr(EXPR_NONE);
+};
+
+},
+function(){
+this.parseExprStatement = function() {
+  return this.parseExpr(EXPR_NULLABLE);
+};
+
+},
+function(){
+this.parseExpr = function(exprMode) {
+  var head = this.parseExprHead(exprMode);
+  if (head === null) {
+    if (!(exprMode & EXPR_NULLABLE))
+      this.err('null.expr');
+  }
+
+  return head;
+};
+
+},
+function(){
+this.id = function() {
+  var n = {
+    type: 'Identifier',
+    name: this.traw
+  };
+  
+  this.next();
+  return n;
+};
+
+},
+function(){
+this.parseIf = function(idMode) {
+  this.ensureStmt(idMode); // for now, it is not allowed to be an expression
+  this.next(); // id:if
+
+  // node-first approach, for the future tolerant mode
+  var n = {
+    type: 'IfStatement',
+    test: null,
+    consequent: null,
+    alternate: null
+  };
+
+  this.no(NL);
+  n.test = this.parseExpr(EXPR_NONE);
+  this.verifyIfTest(n.test);
+
+  n.consequent = this.parseDependentBlock(idMode);
+  
+  if (this.peekID('else'))
+    n.alternate = this.parseElse(idMode);
+
+  return n;
+};
+
+this.parseElse = function(idMode) {
+  this.next();
+
+  if (this.peekID('if')) {
+    this.no(NL);
+    return this.parseIf(idMode)
+  }
+
+  return this.parseDependentBlock(idMode);
+};
+
+},
+function(){
+this.parseProgram = function() {
+  var list = [], stmt = null;
+  this.next();
+  while (stmt = this.parseStatement(STMT_NULLABLE))
+    list.push(stmt);
+  return {
+    type: 'Program',
+    body: list,
+  };
+};
+
+},
+function(){
+this.parseStatement = function(stmtFlags) {
+  if (this.ttype === TOKEN_ID)
+    return this.parseElemStartingWithAnID(IM_STMT);
+
+  return this.parseExprStatement(stmtFlags);
+};
+
+},
+function(){
 this.readEsc = function() {
   var c = this.c, len = this.src.length;
   c++; // the \
@@ -920,11 +1255,7 @@ this.skipWhitespace = function() {
         c = this.c;
         break;
       default:
-        this.nl = nl;
-        this.sp = sp;
-        this.ttype = TOKEN_DIV;
-        this.traw = '/';
-        return true;
+        break LOOP;
       }
       break;
 
@@ -937,8 +1268,48 @@ this.skipWhitespace = function() {
 
   this.sp = sp;
   this.nl = nl;
+};
 
-  return false;
+},
+function(){
+this.ensureStmt = function(idMode) {
+  if (!this.ensureStmt_soft(idMode))
+    throw new Error('must be in stmt mode');
+};
+
+this.ensureStmt_soft = function(idMode) {
+  return !!(idMode & IM_STMT);
+};
+
+
+},
+function(){
+this.verifyIfTest = function(test) {};
+
+}]  ],
+[Transformer.prototype, [function(){
+this.transformIf = function(n, pushTarget, isVal) {
+  this.chkPTY(n, pushTarget);
+  n.test = this.transform(n.test, null, isVal);
+  n.consequent = this.transform(n.consequent, null, isVal);
+  n.alternate = this.transform(n.alternate, null, isVal);
+  return n;
+};
+
+},
+function(){
+this.transformProgram = function(n, pushTarget, isVal) {
+  var list = n.body, i = 0;
+
+  ASSERT.call(pushTarget === null, 'pushTarget not null while transforming a Program node');
+  ASSERT.call(isVal === false, 'isVal not false while transforming a Program node');
+
+  while (i < list.length) {
+    list[i] = this.transform(list[i], pushTarget, isVal);
+    i++;
+  }
+
+  return n;
 };
 
 }]  ],
@@ -1159,7 +1530,6 @@ function testTokens(num) {
 
   try {
     do {
-      testParser.skipWhitespace();
       testParser.next();
 
       var start = testParser.offsetFromLC(testParser.li0, testParser.col0);

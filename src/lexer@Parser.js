@@ -13,6 +13,7 @@ this.c0_to_c = function() {
 };
 
 this.next = function() {
+  this.skipWhitespace();
 
   this.c0 = this.c;
   this.col0 = this.col;

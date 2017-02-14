@@ -209,7 +209,6 @@ function testTokens(num) {
 
   try {
     do {
-      testParser.skipWhitespace();
       testParser.next();
 
       var start = testParser.offsetFromLC(testParser.li0, testParser.col0);

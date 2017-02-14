@@ -1,0 +1,18 @@
+<!doctype>
+<html>
+  <head>
+  </head>
+
+  <body>
+    <textarea rows="12" cols="120" id="codeArea">if a {}</textarea>
+    <button onclick="parseCode()">N</button>
+    <script src="out/stript.js"></script>
+    <script>
+      this.parseCode = function() {
+        var codeArea = document.getElementById('codeArea');
+        var result = new Parser(codeArea.value).parseProgram();
+        console.log(result);
+      }
+    </script>
+  </body>
+</html>

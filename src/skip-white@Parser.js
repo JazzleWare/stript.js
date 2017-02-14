@@ -36,11 +36,7 @@ this.skipWhitespace = function() {
         c = this.c;
         break;
       default:
-        this.nl = nl;
-        this.sp = sp;
-        this.ttype = TOKEN_DIV;
-        this.traw = '/';
-        return true;
+        break LOOP;
       }
       break;
 
@@ -53,6 +49,4 @@ this.skipWhitespace = function() {
 
   this.sp = sp;
   this.nl = nl;
-
-  return false;
 };
