@@ -1008,6 +1008,32 @@ this.parseDependentBlock = function() {
 
 },
 function(){
+this.parseDo = function(idMode) {
+  this.ensureStmt(idMode);
+  this.next();
+
+  var n = {
+    type: 'DoStatement',
+    body: null,
+    test: null
+  };
+
+  n.body = this.parseDependentBlock();
+
+  if (this.peekID('while')) {
+    this.no(NL);
+    this.next();
+    this.no(NL);
+    ASSERT.call(this, this.tokGet(CH_LPAREN), 'a ( was expected');
+    n.test = this.parseExpr(EXPR_NONE);
+    ASSERT.call(this, this.tokGet(CH_RPAREN), 'a ) was expected');
+  }
+
+  return n;
+};
+
+},
+function(){
 // idMode: stmt, expr, validate
 this.parseElemStartingWithAnID = function(idMode) {
   var id = this.traw, elem = null;
@@ -1187,6 +1213,65 @@ this.parseExpr = function(exprMode) {
   }
 
   return head;
+};
+
+},
+function(){
+this.parseFunction = function(idMode) {
+  this.next(); // function()
+  var n = {
+    type: 'Function',
+    id: null,
+    body: [],
+    params: []
+  };
+
+  var name = null;
+
+  if (this.ttype === TOKEN_ID) {
+    ASSERT.call(this, idMode & IM_STMT,
+      'a funcval is not allowed to have a name');
+    n.id = this.parseElemStartingWithAnID(IM_EXPR);
+  }
+
+  this.no(NL);
+  ASSERT.call(this, this.tokGet(CH_LPAREN), 'a ( was expected');
+  n.params = this.parseParams();
+  ASSERT.call(this, this.tokGet(CH_RPAREN), 'a ) was expected');
+
+  this.no(NL);
+  ASSERT.call(this, this.tokGet(CH_LCURLY), 'a { was expected');
+  n.body = this.parseFuncBody();
+  ASSERT.call(this, this.tokGet(CH_RCURLY), 'a } was expected');
+
+  return n;
+};
+
+},
+function(){
+this.parseFuncBody = function() {
+  var list = [], stmt = null;
+  while (stmt = this.parseStatement(STMT_NULLABLE))
+    list.push(stmt);
+  return list;
+};
+
+},
+function(){
+this.parseParams = function() {
+  var list = [], elem = null;
+
+  elem = this.parsePattern();
+  while (elem) {
+    list.push(elem);
+    if (!this.tokGet(CH_COMMA))
+      break;
+    elem = this.parsePattern();
+    if (elem === null)
+      this.err('elem.null');
+  }
+
+  return list;
 };
 
 },
