@@ -1,6 +1,12 @@
 (function(){
 "use strict";
 ;
+function Decl() {
+  this.name = "";
+  this.ref = null;
+  this.type = "";
+}
+;
 function Emitter(spaceStr) {
   this.spaceStr = arguments.length ? spaceStr : "  ";
   this.indentCache = [""];
@@ -24,7 +30,38 @@ function Parser(src, mode) {
   this.sp = false;
   this.nl = false;
 
-  this.currentFwRefTarget = null;
+  this.sdepth = -1;
+}
+;
+function Ref() {
+  this.indirect = 0;
+  this.unresolved = true;
+  this.scope = null;
+  this.direct = 0;
+}
+;
+function Scope(parent, type) {
+  this.parent = parent;
+  this.type = type;
+  this.scs =
+    this.isConcrete() ? this : this.parent.scs;
+  this.refs = {};
+  for (var i = 0; i < RT.length;i++)
+    this.refs[RT[i]] = new SortedObj({});
+
+  var baseDecl = null; 
+  if (this.parent)
+    baseDecl = createObj(this.parent.decls.obj);
+  else
+    baseDecl = {};
+
+  this.decls = new SortedObj(baseDecl);
+  this.name2id = {};
+} 
+;
+function SortedObj(base) {
+  this.keys = [];
+  this.obj = base || {};
 }
 ;
 function Transformer() {
@@ -190,6 +227,22 @@ var EC_NONE = 0,
     EC_START_STMT = 2;
 
 var STMT_NONE = 0;
+
+var RT_NONE = 0,
+    RT_SIMPLE = 1,
+    RT_OUTER = RT_SIMPLE << 1,
+    RT_SIMPLE_OR_OUTER = RT_SIMPLE|RT_OUTER,
+    RT_THIS = RT_OUTER << 1,
+    RT_GLOBAL = RT_THIS << 1;
+
+var DT_VAR = 1,
+    DT_FUNC = DT_VAR << 1;
+
+var ST_LOOP = 1,
+    ST_FUNC = ST_LOOP << 1,
+    ST_LEXICAL = ST_FUNC << 1;
+
+var RT = [RT_SIMPLE, RT_OUTER, RT_SIMPLE_OR_OUTER, RT_GLOBAL, RT_THIS];
 ;
 function isNum(c) {
   return c >= CH_0 && c <= CH_9; 
@@ -210,6 +263,11 @@ function isIDBody(c) {
 
 function char2int(ch) { return ch.charCodeAt(0); }
 
+function createObj(base) {
+  function E() {}
+  E. prototype = base;
+  return new E();
+}
 ;
  (function(){
        var i = 0;
@@ -221,6 +279,44 @@ function char2int(ch) { return ch.charCodeAt(0); }
              def[1][e++].call(def[0]);
        }
      }).call([
+[Decl.prototype, [function(){
+this.n = function(name) {
+  ASSERT.call(this, this.name === "",
+    'name is not empty');
+  this.name = name;
+  return this;
+};
+
+this.r = function(ref) {
+  ASSERT.call(this, this.ref === null,
+    'ref is not null');
+  this.ref = ref;
+  return this;
+};
+
+this.s = function(scope) {
+  ASSERT.call(this, this.scope === null,
+    'scope is not null');
+  this.scope = scope;
+  return this;
+};
+
+this.t = function(type) {
+  ASSERT.call(
+    this,
+    type === 'v' || type === 't' || type === 'f',
+    'invalid type was received ('+type+')');
+  ASSERT.call(this, this.type === "",
+    'type is not empty');
+  this.type = type;
+};
+
+this.absorbRef = function(ref, fromScope) {
+  this.ref.updateWith(ref, fromScope);
+};
+
+
+}]  ],
 [Emitter.prototype, [function(){
 this.indent = function() {
   this.indentLevel++; 
@@ -1151,6 +1247,16 @@ this.parseElse = function(idMode) {
 
 },
 function(){
+this.parsePattern = function() {
+  if (this.ttype !== TOKEN_ID)
+    return null;
+  var id = this.parseElemStartingWithAnID(IM_EXPR);
+  console.log('GOT-PATTERN', '<'+id.name+'>', 'in', this.sdepth);
+  return id;
+};
+
+},
+function(){
 this.parseProgram = function() {
   var list = [], stmt = null;
   this.next();
@@ -1206,6 +1312,52 @@ this.chkStmtTrail = function() {
   }
   
   return false;
+};
+
+},
+function(){
+this.parseVar = function(idMode) {
+  this.ensureStmt(idMode);
+
+  this.next(); // var
+  var list = [], decl = null;
+  var n = {
+    type: 'VariableDeclaration',
+    declarations: list
+  };
+
+  while (true) {
+    decl = this.parseDecl();
+    if (decl === null)
+      this.err('decl.null');
+
+    list.push(decl);
+    if (this.ttype !== CH_COMMA)
+      break;
+    
+    this.next(); // ,
+  }
+
+  return n;
+};
+
+this.parseDecl = function() {
+  var pat = this.parsePattern();
+  if (pat === null)
+    return null;
+
+  var n = {
+    type: 'VariableDeclarator',
+    id: pat,
+    init: null
+  };
+
+  if ((this.ttype & TOKEN_OP) && this.traw === '=') {
+    this.next(); // =
+    n.init = this.parseExpr(EXPR_NONE);
+  }
+
+  return n;
 };
 
 },
@@ -1382,6 +1534,257 @@ function(){
 this.verifyIfTest = function(test) {};
 
 }]  ],
+[Ref.prototype, [function(){
+this.absorb = function(otherRef) {
+  ASSERT.call(this, otherRef.unresolved,
+    'the ref that is going to be absorbed has to be unresolved');
+  if (otherRef.scope.isFunc())
+    this.indirect += otherRef.indirect + otherRef.direct;
+  else {
+    this.direct += otherRef.direct;
+    this.indirect += otherRef.indirect;
+  }
+};
+
+this.totalAcc = function() {
+  return this.direct + this.indirect;
+};
+
+}]  ],
+[Scope.prototype, [function(){
+this.absorbRef = function(refName, refType, refInfo) {
+  return this.absorbRef_m(refName+'%', refType, refInfo || null);
+};
+
+this.absorbRef_m = function(mname, refType, refInfo) {
+  return absorbRef[refType].call(this, mname, refInfo);
+};
+
+var absorbRef = {};
+absorbRef[RT_SIMPLE] = function(mname, refInfo) {
+  if (refInfo) {
+    ASSERT.call(this, refInfo.scope !== this,
+      'absorbing own ref is invalid');
+    ASSERT.call(this, !refInfo.scope.isFunc(),
+      'a simple refInfo must not have escaped a func scope');
+  }
+  ASSERT.call(this, !this.findRef_m(mname, RT_OUTER),
+    'this ref can not be handed over to this scope because it already exists there '+
+    'as an outer');
+  ASSERT.call(this, !this.findRef_m(mname, RT_GLOBAL),
+    'this ref can not be handed over to the current scope because it already exists there '+
+    'as a global');
+
+  if (this.findRef_m(mname, RT_SIMPLE_OR_OUTER))
+    this.removeRef_m(mname, RT_SIMPLE_OR_OUTER);
+
+  var currentRef = this.findRef_m(mname, RT_SIMPLE, true);
+  if (refInfo) currentRef.absorb(refInfo);
+  else currentRef.direct++;
+};
+
+absorbRef[RT_OUTER] = function(mname, refInfo) {
+  ASSERT.call(this, !refInfo || !refInfo.scope.isFunc(),
+    'an outer ref will not escape a func as an outer ref;' +
+    'it escapes that scope as an outer-or-simple ref') ;
+  ASSERT.call(this, !this.findRef_m(mname, RT_SIMPLE),
+    'an outer ref is not allowed to override an '+
+    'existing simple ref');
+  ASSERT.call(this, !this.findRef_m(mname, RT_GLOBAL), 
+    'an outer ref is not allowed to override an '+
+    'existing global ref');
+
+  if (this.findRef_m(mname, RT_SIMPLE_OR_OUTER))
+    this.removeRef_m(mname, RT_SIMPLE_OR_OUTER);
+
+  var currentRef = this.findRef_m(mname, RT_OUTER, true);
+  if (refInfo) currentRef.absorb(refInfo);
+  else currentRef.direct++;
+};
+
+absorbRef[RT_SIMPLE_OR_OUTER] = function(mname, refInfo) {
+  ASSERT.call(this, refInfo !== null,
+    'a simple/outer-ref can not be referenced directly');
+  ASSERT.call(this, !this.findRef_m(mname, RT_GLOBAL),
+    'a simple/outer-ref is not allowed to verride an existing global ref');
+  var currentRef = 
+    this.findRef_m(mname, RT_SIMPLE) ||
+    this.findRef_m(mname, RT_OUTER) ||
+    this.findRef_m(mname, RT_SIMPLE_OR_OUTER, true);
+
+  currentRef.absorb(refInfo);
+};
+
+absorbRef[RT_GLOBAL] = function(mname, refInfo) {
+  ASSERT.call(this, !this.findRef_m(mname, RT_SIMPLE),
+    'a global name is not allowed to override an existing simple ref');
+  ASSERT.call(this, !this.findRef_m(mname, RT_OUTER),
+    'a global name is not allowed to override an existing outer ref');
+  ASSERT.call(this, !this.findRef_m(mname, RT_SIMPLE_OR_OUTER),
+    'a global name is not allowed to override an existing simple/outer ref');
+
+  var currentRef = this.findRef_m(mname, RT_GLOBAL, true);
+
+  if (refInfo)
+    currentRef.absorb(refInfo);
+  else
+    currentRef.direct += 1;
+};
+
+absorbRef[RT_THIS] = function(mname, refInfo) {
+  ASSERT.call(this, false,
+    'this-ref is not allowed to escape its scope');
+};
+
+},
+function(){
+this.reference = function(name, rt) {
+  return this.reference_m(name+'%', rt);
+};
+
+this.reference_m = function(mname, rt) {
+  ASSERT.call(this, rt !== RT_SIMPLE_OR_OUTER,
+    'simple/out is a conceptual reference type; it can not get used in normal contexts');
+  return this.absorbRef_m(mname, rt, null);
+};
+
+this.finish = function() {
+  if (!this.parent)
+    return;
+
+  var i = 0, ref = null, list = null;
+
+  for (var ri = 0, rt = -1; ri < RT.length; ri++) {
+    rt = RT[ri];
+    list = this.refs[rt];
+
+    if (rt === RT_OUTER && this.isFunc())
+      rt = RT_SIMPLE_OR_OUTER;
+
+    while (i < list.keys.length) {
+      ref = list.at(i);
+      if (ref.unresolved)
+        this.parent.absorbRef_m(list.keys[i], rt, ref);
+      i++;
+    }
+  }
+};
+
+this.isFunc = function() { return this.type & ST_FUNC; };
+this.isConcrete = function() { return this.type & ST_FUNC; };
+this.isLexical = function() { return this.type & ST_LEXICAL; };
+
+},
+function(){
+this.declare = function(name, dt) {
+  return this.declare_m(name+'%', dt);
+};
+
+this.findDecl = function(mname) {
+  return this.findDecl_m(mname);
+};
+
+this.findDecl_m = function(mname) {
+  if (this.decls.has(mname))
+    return this.decls.get(mname);
+
+  return null;
+};
+
+this.declare_m = function(mname, dt) {
+  ASSERT.call(this, this.findRef_m(mname, RT_SIMPLE),
+    'can not locally declare a name that has been previously accessed in the current scope');
+  ASSERT.call(this, this.findRef_m(mname, RT_GLOBAL),
+    'can not locally declare a name that has been referenced as global');
+  ASSERT.call(this, this.findRef_m(mname, RT_OUTER),
+    'can not locally declare a name that has been referenced as outer');
+  ASSERT.call(this, this.findDecl_m(mname),
+    'a name can only have a single local declaration');
+
+  var ref = this.findRef_m(mname, RT_SIMPLE_OR_OUTER);
+  if (ref !== null) {
+    ASSERT.call(this, dt === DT_FUNC,
+      'forward references has to be indirect, and they must resolve to function declarations');
+    this.removeRef(mname, RT_SIMPLE_OR_OUTER);
+  }
+
+  ref = this.findRef_m(mname, RT_SIMPLE, true);
+  ref.unresolved = false;
+  this.decls.set(mname, new Decl().n(mname).r(ref).s(this).t(dt));
+};
+
+},
+function(){
+this.findRef = function(name, rt, createAndSetIfNotFound) {
+  return this.findRef_m(name, rt, createAndSetIfNotFound);
+};
+
+this.findRef_m = function(mname, rt, createAndSetIfNotFound) {
+  var refs = this.refs[rt];
+  if (refs.has(mname))
+    return refs.get(mname);
+  if (createAndSetIfNotFound) {
+    var ref = new Ref();
+    ref.scope = this;
+    return refs.set(mname, ref);
+  }
+  return null;
+};
+
+},
+function(){
+this.removeRef = function(name, rt) {
+  return this.removeRef_m(name+'%', rt);
+};
+
+this.removeRef_m = function(mname, rt) {
+  var refs = this.refs[rt];
+  ASSERT.call(this, refs.has(mname),
+    '<'+mname+'>: name not found (only existing names can be removed)');
+  return refs.remove(mname);
+};
+
+}]  ],
+[SortedObj.prototype, [function(){
+this.set = function(name, val) {
+  if (!HAS.call(this.obj, name))
+    this.keys.push(name);
+  return this.obj[name] = val;
+};
+
+this.at = function(i) {
+  return i < this.keys.length ? this.obj[this.keys[i]] : void 0;
+};
+
+this.get = function(name) {
+  return this.obj[name]; 
+};
+
+this.remove = function(name) {
+  if (!HAS.call(this.obj, name))
+    return false;
+
+  delete this.obj[name];
+
+  var list = this.keys, i = 0;
+
+  while (name !== list[i])
+    i++;
+
+  while (i < list.length-1) {
+    list[i] = list[i+1];
+    i++;
+  }
+
+  list.pop();
+  return true;
+};
+
+this.has = function(name) {
+  return HAS.call(this.obj, name);
+};
+
+}]  ],
 [Transformer.prototype, [function(){
 this.transformIf = function(n, pushTarget, isVal) {
   this.chkPTY(n, pushTarget);
@@ -1414,6 +1817,19 @@ null,
 null]);
 this.Parser = /* name */ Parser;
 this.Emitter = Emitter;
+this.Scope = Scope;
+this.DT_VAR = DT_VAR;
+this.DT_FUNC = DT_FUNC;
+
+this.RT_NONE = RT_NONE;
+this.RT_SIMPLE = RT_SIMPLE;
+this.RT_OUTER = RT_OUTER;
+this.RT_SIMPLE_OR_OUTER = RT_SIMPLE_OR_OUTER;
+this.RT_THIS = RT_THIS;
+this.RT_GLOBAL = RT_GLOBAL;
+
+this.ST_LEXICAL = ST_LEXICAL;
+this.ST_FUNC = ST_FUNC;
 
 ;(function(){function rand(min, max) {
   var r = Math.random();

@@ -13,5 +13,5 @@ function Parser(src, mode) {
   this.sp = false;
   this.nl = false;
 
-  this.currentFwRefTarget = null;
+  this.sdepth = -1;
 }

@@ -17,3 +17,8 @@ function isIDBody(c) {
 
 function char2int(ch) { return ch.charCodeAt(0); }
 
+function createObj(base) {
+  function E() {}
+  E. prototype = base;
+  return new E();
+}

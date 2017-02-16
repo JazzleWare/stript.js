@@ -9,3 +9,19 @@ var EC_NONE = 0,
     EC_START_STMT = 2;
 
 var STMT_NONE = 0;
+
+var RT_NONE = 0,
+    RT_SIMPLE = 1,
+    RT_OUTER = RT_SIMPLE << 1,
+    RT_SIMPLE_OR_OUTER = RT_SIMPLE|RT_OUTER,
+    RT_THIS = RT_OUTER << 1,
+    RT_GLOBAL = RT_THIS << 1;
+
+var DT_VAR = 1,
+    DT_FUNC = DT_VAR << 1;
+
+var ST_LOOP = 1,
+    ST_FUNC = ST_LOOP << 1,
+    ST_LEXICAL = ST_FUNC << 1;
+
+var RT = [RT_SIMPLE, RT_OUTER, RT_SIMPLE_OR_OUTER, RT_GLOBAL, RT_THIS];
