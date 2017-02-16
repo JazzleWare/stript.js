@@ -9,10 +9,14 @@ function Scope(parent, type) {
 
   var baseDecl = null; 
   if (this.parent)
-    baseDecl = createObj(this.parent.decls.obj);
+    baseDecl = createObj(this.parent.allDecls.obj);
   else
     baseDecl = {};
 
-  this.decls = new SortedObj(baseDecl);
+  this.allDecls =
+    this.isConcrete() ? new SortedObj(baseDecl) : this.scs.allDecls;
+
+  this.ownDecls = new SortedObj(baseDecl);
+
   this.name2id = {};
 } 

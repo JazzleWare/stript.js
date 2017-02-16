@@ -4,7 +4,7 @@
 function Decl() {
   this.name = "";
   this.ref = null;
-  this.type = "";
+  this.type = -1;
 }
 ;
 function Emitter(spaceStr) {
@@ -51,11 +51,15 @@ function Scope(parent, type) {
 
   var baseDecl = null; 
   if (this.parent)
-    baseDecl = createObj(this.parent.decls.obj);
+    baseDecl = createObj(this.parent.allDecls.obj);
   else
     baseDecl = {};
 
-  this.decls = new SortedObj(baseDecl);
+  this.allDecls =
+    this.isConcrete() ? new SortedObj(baseDecl) : this.scs.allDecls;
+
+  this.ownDecls = new SortedObj(baseDecl);
+
   this.name2id = {};
 } 
 ;
@@ -280,10 +284,14 @@ function createObj(base) {
        }
      }).call([
 [Decl.prototype, [function(){
-this.n = function(name) {
-  ASSERT.call(this, this.name === "",
-    'name is not empty');
-  this.name = name;
+this.t = function(type) {
+  ASSERT.call(
+    this,
+    type === DT_VAR || type === DT_FUNC,
+    'invalid type was received ('+type+')');
+  ASSERT.call(this, this.type === -1,
+    'type is not empty');
+  this.type = type;
   return this;
 };
 
@@ -294,27 +302,12 @@ this.r = function(ref) {
   return this;
 };
 
-this.s = function(scope) {
-  ASSERT.call(this, this.scope === null,
-    'scope is not null');
-  this.scope = scope;
+this.n = function(name) {
+  ASSERT.call(this, this.name === "",
+    'name is not empty');
+  this.name = name;
   return this;
 };
-
-this.t = function(type) {
-  ASSERT.call(
-    this,
-    type === 'v' || type === 't' || type === 'f',
-    'invalid type was received ('+type+')');
-  ASSERT.call(this, this.type === "",
-    'type is not empty');
-  this.type = type;
-};
-
-this.absorbRef = function(ref, fromScope) {
-  this.ref.updateWith(ref, fromScope);
-};
-
 
 }]  ],
 [Emitter.prototype, [function(){
@@ -1685,32 +1678,36 @@ this.findDecl = function(mname) {
 };
 
 this.findDecl_m = function(mname) {
-  if (this.decls.has(mname))
-    return this.decls.get(mname);
+  if (this.allDecls.has(mname))
+    return this.allDecls.get(mname);
 
   return null;
 };
 
 this.declare_m = function(mname, dt) {
-  ASSERT.call(this, this.findRef_m(mname, RT_SIMPLE),
+  ASSERT.call(this, !this.findDecl_m(mname),
+    'a name can only have a single func-wide declaration');
+  ASSERT.call(this, !this.findRef_m(mname, RT_SIMPLE),
     'can not locally declare a name that has been previously accessed in the current scope');
-  ASSERT.call(this, this.findRef_m(mname, RT_GLOBAL),
+  ASSERT.call(this, !this.findRef_m(mname, RT_GLOBAL),
     'can not locally declare a name that has been referenced as global');
-  ASSERT.call(this, this.findRef_m(mname, RT_OUTER),
+  ASSERT.call(this, !this.findRef_m(mname, RT_OUTER),
     'can not locally declare a name that has been referenced as outer');
-  ASSERT.call(this, this.findDecl_m(mname),
-    'a name can only have a single local declaration');
 
   var ref = this.findRef_m(mname, RT_SIMPLE_OR_OUTER);
   if (ref !== null) {
     ASSERT.call(this, dt === DT_FUNC,
       'forward references has to be indirect, and they must resolve to function declarations');
-    this.removeRef(mname, RT_SIMPLE_OR_OUTER);
+    this.removeRef_m(mname, RT_SIMPLE_OR_OUTER);
   }
 
   ref = this.findRef_m(mname, RT_SIMPLE, true);
   ref.unresolved = false;
-  this.decls.set(mname, new Decl().n(mname).r(ref).s(this).t(dt));
+
+  var newDecl = new Decl().t(dt).r(ref).n(mname);
+
+  this.ownDecls.set(mname, newDecl);
+  this.allDecls.set(mname, newDecl);
 };
 
 },

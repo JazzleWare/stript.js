@@ -1,5 +1,5 @@
 function Decl() {
   this.name = "";
   this.ref = null;
-  this.type = "";
+  this.type = -1;
 }
