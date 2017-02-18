@@ -3,6 +3,6 @@ emitters['Program'] = function(n, prec, isStmt) {
   while (i < list.length) {
     var stmt = list[i++];
     i > 0 && this.startLine();
-    this.emit(stmt);
+    this.emit(stmt, PREC_NONE, EC_START_STMT);
   }
 };

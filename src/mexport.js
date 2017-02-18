@@ -13,3 +13,6 @@ this.RT_GLOBAL = RT_GLOBAL;
 
 this.ST_LEXICAL = ST_LEXICAL;
 this.ST_FUNC = ST_FUNC;
+
+this.DT_FW_FN = DT_FW_FN;
+this.DT_NONE = DT_NONE;

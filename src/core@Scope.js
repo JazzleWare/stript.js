@@ -30,6 +30,21 @@ this.finish = function() {
   }
 };
 
+this.tryResolve = function(name) {
+  return this.tryResolve_m(name+'%');
+};
+
+this.tryResolve_m = function(mname) {
+  if (HAS.call(this.refCache, mname))
+    return this.refCache[mname];
+  var ref = this.allDecls.obj[mname];
+  if (ref) {
+    this.refCache[mname] = ref;
+    return ref;
+  }
+  return null;
+};
+
 this.isFunc = function() { return this.type & ST_FUNC; };
 this.isConcrete = function() { return this.type & ST_FUNC; };
 this.isLexical = function() { return this.type & ST_LEXICAL; };

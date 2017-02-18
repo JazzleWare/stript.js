@@ -1,3 +1,7 @@
 emitters['Identifier'] = function(n, prec, flags) {
-  this.write(n.name);
+  this.emitID(n);
+};
+
+this.emitID = function(id) {
+  this.write(id.name);
 };

@@ -240,7 +240,9 @@ var RT_NONE = 0,
     RT_GLOBAL = RT_THIS << 1;
 
 var DT_VAR = 1,
-    DT_FUNC = DT_VAR << 1;
+    DT_FUNC = DT_VAR << 1,
+    DT_FW_FN = DT_FUNC << 1,
+    DT_NONE = 0;
 
 var ST_LOOP = 1,
     ST_FUNC = ST_LOOP << 1,
@@ -285,10 +287,6 @@ function createObj(base) {
      }).call([
 [Decl.prototype, [function(){
 this.t = function(type) {
-  ASSERT.call(
-    this,
-    type === DT_VAR || type === DT_FUNC,
-    'invalid type was received ('+type+')');
   ASSERT.call(this, this.type === -1,
     'type is not empty');
   this.type = type;
@@ -439,6 +437,28 @@ emitters['ExpressionStatement'] = function(n, prec, flags) {
 
 },
 function(){
+this.emitParams = function(list) {
+  var i = 0;
+  while (i < list.length) {
+    if (i > 0) this.wm(',',' ');
+    this.emitPattern(list[i]);
+    i++;
+  }
+};
+
+emitters['Function'] = function(n, prec, flags) {
+  var paren = (flags & EC_START_STMT) && !n.id;
+  if (paren) this.w('(');
+  this.w('function');
+  if (n.id)
+    this.s().emitPattern(n.id);
+  this.w('(').emitParams(n.params);
+  this.w(')').emitDependentBlock(n.body);
+  if (paren) this.w(')');
+};
+
+},
+function(){
 emitters['IfStatement'] = function(n, prec, flags) {
   this.wm('if',' ','(');
   this.emit(n.test, PREC_NONE, EC_NONE);
@@ -453,7 +473,19 @@ emitters['IfStatement'] = function(n, prec, flags) {
 },
 function(){
 emitters['Identifier'] = function(n, prec, flags) {
-  this.write(n.name);
+  this.emitID(n);
+};
+
+this.emitID = function(id) {
+  this.write(id.name);
+};
+
+},
+function(){
+this.emitPattern = function(n) {
+  ASSERT.call(this, n.type === 'Identifier',
+    'Unknown type for pattern: <'+n.type+'>');
+  this.emitID(n);
 };
 
 },
@@ -463,7 +495,7 @@ emitters['Program'] = function(n, prec, isStmt) {
   while (i < list.length) {
     var stmt = list[i++];
     i > 0 && this.startLine();
-    this.emit(stmt);
+    this.emit(stmt, PREC_NONE, EC_START_STMT);
   }
 };
 
@@ -1222,7 +1254,7 @@ this.parseFunction = function(idMode) {
   var n = {
     type: 'Function',
     id: null,
-    body: [],
+    body: null,
     params: []
   };
 
@@ -1240,9 +1272,8 @@ this.parseFunction = function(idMode) {
   ASSERT.call(this, this.tokGet(CH_RPAREN), 'a ) was expected');
 
   this.no(NL);
-  ASSERT.call(this, this.tokGet(CH_LCURLY), 'a { was expected');
+  ASSERT.call(this, this.tokPeek(CH_LCURLY), 'a { was expected');
   n.body = this.parseFuncBody();
-  ASSERT.call(this, this.tokGet(CH_RCURLY), 'a } was expected');
 
   return n;
 };
@@ -1250,10 +1281,7 @@ this.parseFunction = function(idMode) {
 },
 function(){
 this.parseFuncBody = function() {
-  var list = [], stmt = null;
-  while (stmt = this.parseStatement(STMT_NULLABLE))
-    list.push(stmt);
-  return list;
+  return this.parseDependentBlock();
 };
 
 },
@@ -1748,6 +1776,21 @@ this.finish = function() {
   }
 };
 
+this.tryResolve = function(name) {
+  return this.tryResolve_m(name+'%');
+};
+
+this.tryResolve_m = function(mname) {
+  if (HAS.call(this.refCache, mname))
+    return this.refCache[mname];
+  var ref = this.allDecls.obj[mname];
+  if (ref) {
+    this.refCache[mname] = ref;
+    return ref;
+  }
+  return null;
+};
+
 this.isFunc = function() { return this.type & ST_FUNC; };
 this.isConcrete = function() { return this.type & ST_FUNC; };
 this.isLexical = function() { return this.type & ST_LEXICAL; };
@@ -1770,29 +1813,31 @@ this.findDecl_m = function(mname) {
 };
 
 this.declare_m = function(mname, dt) {
-  ASSERT.call(this, !this.findDecl_m(mname),
-    'a name can only have a single func-wide declaration');
-  ASSERT.call(this, !this.findRef_m(mname, RT_SIMPLE),
-    'can not locally declare a name that has been previously accessed in the current scope');
-  ASSERT.call(this, !this.findRef_m(mname, RT_GLOBAL),
-    'can not locally declare a name that has been referenced as global');
-  ASSERT.call(this, !this.findRef_m(mname, RT_OUTER),
-    'can not locally declare a name that has been referenced as outer');
-
-  var ref = this.findRef_m(mname, RT_SIMPLE_OR_OUTER);
-  if (ref !== null) {
-    ASSERT.call(this, dt === DT_FUNC,
-      'forward references has to be indirect, and they must resolve to function declarations');
-    this.removeRef_m(mname, RT_SIMPLE_OR_OUTER);
+  var existingDecl = this.findDecl_m(mname);
+  if (existingDecl) {
+    ASSERT.call(this, existingDecl.type === DT_FW_FN && dt === DT_FUNC,
+      'a name can only have a single func-wide declaration');
+    ASSERT.call(this, existingDecl.ref.indirect !== 0,
+      'a forward name must have been accessed indirectly before its actual declaration is reached.');
+      
+    existingDecl.type = dt;
   }
-
-  ref = this.findRef_m(mname, RT_SIMPLE, true);
-  ref.unresolved = false;
-
-  var newDecl = new Decl().t(dt).r(ref).n(mname);
-
-  this.ownDecls.set(mname, newDecl);
-  this.allDecls.set(mname, newDecl);
+  else {
+    ASSERT.call(this, !this.findRef_m(mname, RT_SIMPLE),
+      'can not locally declare a name that has been previously accessed in the current scope');
+    ASSERT.call(this, !this.findRef_m(mname, RT_GLOBAL),
+      'can not locally declare a name that has been referenced as global');
+    ASSERT.call(this, !this.findRef_m(mname, RT_OUTER),
+      'can not locally declare a name that has been referenced as outer');
+    ASSERT.call(this, !this.findRef_m(mname, RT_SIMPLE_OR_OUTER),
+      'can not locally declare a name that has been accessed in an inner func-scope');
+  
+    var ref = this.findRef_m(mname, RT_SIMPLE, true);
+    ref.unresolved = false;
+    var newDecl = new Decl().t(dt).r(ref).n(mname);
+    this.ownDecls.set(mname, newDecl);
+    this.allDecls.set(mname, newDecl);
+  }
 };
 
 },
@@ -1912,4 +1957,7 @@ this.RT_GLOBAL = RT_GLOBAL;
 
 this.ST_LEXICAL = ST_LEXICAL;
 this.ST_FUNC = ST_FUNC;
+
+this.DT_FW_FN = DT_FW_FN;
+this.DT_NONE = DT_NONE;
 ;}).call (function(){try{return module.exports;}catch(e){return this;}}.call(this))

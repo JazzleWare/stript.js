@@ -3,7 +3,7 @@ this.parseFunction = function(idMode) {
   var n = {
     type: 'Function',
     id: null,
-    body: [],
+    body: null,
     params: []
   };
 
@@ -21,9 +21,8 @@ this.parseFunction = function(idMode) {
   ASSERT.call(this, this.tokGet(CH_RPAREN), 'a ) was expected');
 
   this.no(NL);
-  ASSERT.call(this, this.tokGet(CH_LCURLY), 'a { was expected');
+  ASSERT.call(this, this.tokPeek(CH_LCURLY), 'a { was expected');
   n.body = this.parseFuncBody();
-  ASSERT.call(this, this.tokGet(CH_RCURLY), 'a } was expected');
 
   return n;
 };

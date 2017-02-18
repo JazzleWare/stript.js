@@ -18,7 +18,9 @@ var RT_NONE = 0,
     RT_GLOBAL = RT_THIS << 1;
 
 var DT_VAR = 1,
-    DT_FUNC = DT_VAR << 1;
+    DT_FUNC = DT_VAR << 1,
+    DT_FW_FN = DT_FUNC << 1,
+    DT_NONE = 0;
 
 var ST_LOOP = 1,
     ST_FUNC = ST_LOOP << 1,
